@@ -1,7 +1,10 @@
 package main
 
 import (
-	"fmt"
+	// "fmt"
+
+	"crypto/sha256"
+	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
@@ -14,8 +17,9 @@ import (
 type CubicCircuit struct {
 	// struct tags on a variable is optional
 	// default uses variable name and secret visibility.
-	X frontend.Variable `gnark:"x"`
-	Y frontend.Variable `gnark:",public"`
+	X       frontend.Variable `gnark:"x"`
+	Y       frontend.Variable `gnark:",public"`
+	MsgHash frontend.Variable `gnark:",public"`
 }
 
 // Define declares the circuit constraints
@@ -34,23 +38,19 @@ func main() {
 	// groth16 zkSNARK: Setup
 	pk, vk, _ := groth16.Setup(ccs)
 
-	fmt.Println(vk == nil)
-
 	// witness definition
-	assignment := CubicCircuit{X: 3, Y: 35}
+	assignment := CubicCircuit{X: 3, Y: 35, MsgHash: hashToField("gui cho Alice")}
 	witness, _ := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
 	publicWitness, _ := witness.Public()
-
-	// witness definition
-	assignment2 := CubicCircuit{X: 4, Y: 73}
-	witness2, _ := frontend.NewWitness(&assignment2, ecc.BN254.ScalarField())
-	// publicWitness2, _ := witness2.Public()
 
 	// groth16: Prove & Verify
 	proof, _ := groth16.Prove(ccs, pk, witness)
 	groth16.Verify(proof, vk, publicWitness)
 
-	// groth16: Prove & Verify
-	proof2, _ := groth16.Prove(ccs, pk, witness2)
-	groth16.Verify(proof2, vk, publicWitness)
+}
+
+// Hash message into a field element
+func hashToField(msg string) *big.Int {
+	hash := sha256.Sum256([]byte(msg))
+	return new(big.Int).SetBytes(hash[:])
 }
