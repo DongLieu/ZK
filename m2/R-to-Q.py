@@ -51,6 +51,7 @@ assert all(np.equal(np.matmul(L_galois, witness) * np.matmul(R_galois, witness),
 
 print(all(np.equal(np.matmul(L_galois, witness) * np.matmul(R_galois, witness), np.matmul(O_galois, witness))))
 
+# ============================================== QAP =============================================
 
 def interpolate_column(col):
     xs = GF(np.array([1,2,3,4]))
