@@ -46,6 +46,13 @@ func main() {
 
 	// groth16: Prove & Verify
 	proof, _ := groth16.Prove(ccs, pk, witness)
+
+	var circuit2 CubicCircuit2
+	ccs2, _ := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit2)
+
+	// groth16 zkSNARK: Setup
+	groth16.Setup(ccs2)
+
 	groth16.Verify(proof, vk, publicWitness)
 
 }
@@ -54,4 +61,24 @@ func main() {
 func hashToField(msg string) *big.Int {
 	hash := sha256.Sum256([]byte(msg))
 	return new(big.Int).SetBytes(hash[:])
+}
+
+// CubicCircuit defines a simple circuit
+// x**3 + 2*x + 5 == y
+type CubicCircuit2 struct {
+	// struct tags on a variable is optional
+	// default uses variable name and secret visibility.
+	X frontend.Variable `gnark:"x"`
+	Y frontend.Variable `gnark:"x"`
+	// Y frontend.Variable `gnark:",public"`
+	MsgHash frontend.Variable `gnark:"x"`
+}
+
+// Define declares the circuit constraints
+// x**3 + 2*x + 5 == y
+func (circuit *CubicCircuit2) Define(api frontend.API) error {
+	x3 := api.Mul(circuit.X, circuit.X, circuit.X)
+	_2x := api.Mul(2, circuit.X)
+	api.AssertIsEqual(circuit.Y, api.Add(x3, _2x, 5))
+	return nil
 }

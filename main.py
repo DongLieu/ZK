@@ -128,6 +128,7 @@ T = galois.Poly([1, p-1], field=FP)
 for i in range(2, L.shape[0] + 1):
     T *= galois.Poly([1, p-i], field=FP)
 
+# -----------------------------------------------------------------
 
 U = galois.Poly((prv_witness @ Lp)[::-1])
 V = galois.Poly((prv_witness @ Rp)[::-1])
