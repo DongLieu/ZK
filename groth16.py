@@ -124,13 +124,14 @@ C = {n_proof.C}
     def normalize(self):
         return Proof(normalize(self.A), normalize(self.B), normalize(self.C))
     
-def keygen(qap: QAP, l):  # -> (ProverKey, VerifierKey)
+def keygen(qap: QAP):  # -> (ProverKey, VerifierKey)
     # generating toxic waste
     alpha = FP(random.randint(2, p - 1))
     beta = FP(random.randint(2, p - 1))
     gamma = FP(random.randint(2, p - 1))
     delta = FP(random.randint(2, p - 1))
     tau = FP(random.randint(2, p - 1))
+    l=random.randrange(2, qap.L.shape[0])
 
     beta_L = beta * qap.L
     alpha_R = alpha * qap.R
@@ -176,11 +177,11 @@ def keygen(qap: QAP, l):  # -> (ProverKey, VerifierKey)
     return pk, vk
 
 
-def prove(pk: ProverKey, w_pub: [], w_priv: [], qap: QAP):
+def prove(pk: ProverKey, w: [], qap: QAP):
     r = FP(12)
     s = FP(13)
 
-    w = FP(np.concatenate((w_pub, w_priv)))
+    w_priv = w[len(w)-len(pk.K_delta_G1):]
 
     U = Poly((w @ qap.L)[::-1])
     V = Poly((w @ qap.R)[::-1])

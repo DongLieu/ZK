@@ -67,12 +67,9 @@ for i in range(2, L.shape[0] + 1):
 
 # # ============================================== import groth16 =============================================
 qap = groth16.QAP(Lp, Rp, Op, T)
-l=random.randrange(2, len(witness))
-print(l)
-_pk,vk = groth16.keygen(qap, l)
-w_public = witness[:l]
-_w_private = witness[l:]
-proof = groth16.prove(_pk, w_public, _w_private, qap)
+_pk,vk = groth16.keygen(qap, )
+proof = groth16.prove(_pk,witness, qap)
 
+w_public = witness[:len(vk.K_gamma_G1)]
 ok = groth16.verifier(vk,w_public, proof)
 print(ok)
