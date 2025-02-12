@@ -1,3 +1,4 @@
+import random
 from galois import Poly, GF
 from py_ecc.optimized_bn128 import optimized_curve as curve
 import numpy as np
@@ -123,14 +124,13 @@ C = {n_proof.C}
     def normalize(self):
         return Proof(normalize(self.A), normalize(self.B), normalize(self.C))
     
-def keygen(qap: QAP):  # -> (ProverKey, VerifierKey)
+def keygen(qap: QAP, l):  # -> (ProverKey, VerifierKey)
     # generating toxic waste
-    alpha = FP(2)
-    beta = FP(3)
-    gamma = FP(4)
-    delta = FP(5)
-    tau = FP(20)
-    l = 2
+    alpha = FP(random.randint(2, p - 1))
+    beta = FP(random.randint(2, p - 1))
+    gamma = FP(random.randint(2, p - 1))
+    delta = FP(random.randint(2, p - 1))
+    tau = FP(random.randint(2, p - 1))
 
     beta_L = beta * qap.L
     alpha_R = alpha * qap.R

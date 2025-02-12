@@ -1,5 +1,6 @@
 
 # Import module
+import random
 import groth16
 import numpy as np
 import galois
@@ -66,10 +67,12 @@ for i in range(2, L.shape[0] + 1):
 
 # # ============================================== import groth16 =============================================
 qap = groth16.QAP(Lp, Rp, Op, T)
-_pk,vk = groth16.keygen(qap=qap)
-w_public = witness[:2]
-_w_private = witness[2:]
+l=random.randrange(2, len(witness))
+print(l)
+_pk,vk = groth16.keygen(qap, l)
+w_public = witness[:l]
+_w_private = witness[l:]
 proof = groth16.prove(_pk, w_public, _w_private, qap)
 
-ok = groth16.verifier(vk,w_public, proof,verbose=True)
+ok = groth16.verifier(vk,w_public, proof)
 print(ok)
