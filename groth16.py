@@ -11,7 +11,6 @@ from py_ecc.optimized_bn128 import (
     pairing,
     neg,
 )
-from string import Template
 
 # p = 21888242871839275222246405745257275088548364400416034343698204186575808495617
 p = curve_order
