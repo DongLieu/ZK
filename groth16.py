@@ -9,6 +9,7 @@ from py_ecc.optimized_bn128 import (
     normalize,
     curve_order,
     pairing,
+    neg,
 )
 from string import Template
 
@@ -231,8 +232,8 @@ def prove(pk: ProverKey, w_pub: [], w_priv: [], qap: QAP):
 
 
 def verifier(vk: VerifierKey, w_pub: [], proof: Proof, verbose=False):
-    l1 = pairing(proof.B,proof.A)
-    l2 = pairing(vk.beta_G2, vk.alpha_G1)
+    e1 = pairing(proof.B,proof.A)
+    e2 = pairing(vk.beta_G2, vk.alpha_G1)
 
     # [K/δ*w]G1
     Kw_gamma_G1_terms = [
@@ -242,9 +243,9 @@ def verifier(vk: VerifierKey, w_pub: [], proof: Proof, verbose=False):
     for i in range(1, len(Kw_gamma_G1_terms)):
         Kw_gamma_G1 = add(Kw_gamma_G1, Kw_gamma_G1_terms[i])
 
-    l3 = pairing(vk.gamma_G2,Kw_gamma_G1)
+    e3 = pairing(vk.gamma_G2,Kw_gamma_G1)
 
-    l4 = pairing(vk.delta_G2,proof.C)
+    e4 = pairing(vk.delta_G2,proof.C)
     if verbose:
         print("self.B on curve:", curve.is_on_curve(proof.B, curve.b2))
         print("self.A on curve:", curve.is_on_curve(proof.A, curve.b))
@@ -254,10 +255,9 @@ def verifier(vk: VerifierKey, w_pub: [], proof: Proof, verbose=False):
         print("Kw_gamma_G1 on curve:", curve.is_on_curve(Kw_gamma_G1, curve.b))
         print("vk.delta_G2 on curve:", curve.is_on_curve(vk.delta_G2, curve.b2))
         print("self.C on curve:", curve.is_on_curve(proof.C, curve.b))
+        print("neg_A * neg_B == e2 * e3 * e4 ?:",pairing(neg(proof.B),neg(proof.A)) == e2 * e3 * e4)
 
-
-    v = l1 == l2 * l3 * l4
-    return v
+    return e1 == e2 * e3 * e4
 
 
 def to_poly(mtx):

@@ -84,6 +84,6 @@ pk,vk = groth16.keygen(qap=qap)
 
 proof = groth16.prove(pk, witness[:2], witness[2:], qap)
 
-v = groth16.verifier(vk,witness[:2], proof)
+v = groth16.verifier(vk,witness[:2], proof,verbose=True)
 print(v)
 # print(pk.__repr__)
