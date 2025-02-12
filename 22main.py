@@ -69,7 +69,8 @@ Lp = poly_m[0]
 Rp = poly_m[1]
 Op = poly_m[2]
 
-print(L.shape[0])
+# print(L.shape[0])
+
 T = galois.Poly([1, p-1], field=FP)
 for i in range(2, L.shape[0] + 1):
     T *= galois.Poly([1, p-i], field=FP)
@@ -83,9 +84,6 @@ pk,vk = groth16.keygen(qap=qap)
 
 proof = groth16.prove(pk, witness[:2], witness[2:], qap)
 
-v = proof.verifier(vk,witness[:2])
-print(v)
-print("=======")
 v = groth16.verifier(vk,witness[:2], proof)
 print(v)
 # print(pk.__repr__)
