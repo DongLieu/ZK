@@ -178,8 +178,8 @@ def keygen(qap: QAP):  # -> (ProverKey, VerifierKey)
 
 
 def prove(pk: ProverKey, w: [], qap: QAP):
-    r = FP(12)
-    s = FP(13)
+    r = FP(random.randint(2, p - 1))
+    s = FP(random.randint(2, p - 1))
 
     w_priv = w[len(w)-len(pk.K_delta_G1):]
 
