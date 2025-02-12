@@ -65,7 +65,7 @@ T = galois.Poly([1, p-1], field=FP)
 for i in range(2, L.shape[0] + 1):
     T *= galois.Poly([1, p-i], field=FP)
 
-# # ============================================== import groth16 =============================================
+# # ============================================== groth16 =============================================
 qap = groth16.QAP(Lp, Rp, Op, T)
 _pk,vk = groth16.keygen(qap, )
 proof = groth16.prove(_pk,witness, qap)
