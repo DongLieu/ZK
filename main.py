@@ -15,7 +15,7 @@ _v2 = _y * _y
 _v3 = 5 * _x * _v1
 _v4 = 4 * _v1 * _v2
 out = 5*_x**3 - 4*_x**2*_y**2 + 13*_x*_y**2 + _x**2 - 10*_y
-witness = FP([1, out, _x, _y, _v1, _v2, _v3, _v4])
+_witness = FP([1, out, _x, _y, _v1, _v2, _v3, _v4])
 # ==============================================R1CS =============================================
 
 R = FP([[0, 0, 1, 0, 0, 0, 0, 0],
@@ -68,8 +68,8 @@ for i in range(2, L.shape[0] + 1):
 # # ============================================== groth16 =============================================
 qap = groth16.QAP(Lp, Rp, Op, T)
 _pk,vk = groth16.keygen(qap, )
-proof = groth16.prove(_pk,witness, qap)
+proof = groth16.prove(_pk,_witness, qap)
 
-w_public = witness[:len(vk.K_gamma_G1)]
+w_public = _witness[:len(vk.K_gamma_G1)]
 ok = groth16.verifier(vk,w_public, proof)
 print(ok)
