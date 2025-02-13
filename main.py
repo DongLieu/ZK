@@ -8,6 +8,7 @@ import galois
 FP = groth16.FP
 p = groth16.p
 
+# f(x,y) = 5*x^3 - 4*x^2*y^2 +13*x*y^2+x^2-10y 
 _x = FP(2)
 _y = FP(3)
 _v1 = _x * _x
@@ -16,7 +17,7 @@ _v3 = 5 * _x * _v1
 _v4 = 4 * _v1 * _v2
 out = 5*_x**3 - 4*_x**2*_y**2 + 13*_x*_y**2 + _x**2 - 10*_y
 _witness = FP([1, out, _x, _y, _v1, _v2, _v3, _v4])
-# ==============================================R1CS =============================================
+# ============================================== R1CS =============================================
 
 R = FP([[0, 0, 1, 0, 0, 0, 0, 0],
          [0, 0, 0, 1, 0, 0, 0, 0],
@@ -35,7 +36,7 @@ O = FP([[0, 0, 0, 0, 1, 0, 0, 0],
          [0, 0, 0, 0, 0, 0, 1, 0],
          [0, 0, 0, 0, 0, 0, 0, 1],
          [0, 1, 0, 10, FP(p - 1), 0, FP(p - 1), 1]])
-
+assert all(np.equal(np.matmul(L, _witness) * np.matmul(R, _witness), np.matmul(O, _witness))), "not equal"
 # # ============================================== QAP =============================================
 mtxs = [L, R, O]
 poly_m = []
@@ -70,6 +71,6 @@ qap = groth16.QAP(Lp, Rp, Op, T)
 _pk,vk = groth16.keygen(qap, )
 proof = groth16.prove(_pk,_witness, qap)
 
-w_public = _witness[:len(vk.K_gamma_G1)]
+w_public = groth16.get_witness_public(_pk, _witness)
 ok = groth16.verifier(vk,w_public, proof)
 print(ok)

@@ -260,6 +260,9 @@ def verifier(vk: VerifierKey, w_pub: [], proof: Proof, verbose=False):
     return e1 == e2 * e3 * e4
 
 
+def get_witness_public(pk: ProverKey, w: [],):
+    return  w[:len(w)-len(pk.K_delta_G1)]
+
 def to_poly(mtx):
     poly_list = []
     for i in range(0, mtx.shape[0]):
