@@ -24,18 +24,6 @@ class QAP:
         self.R = R
         self.O = O
         self.T = T
-
-    def __repr__(self):
-        s = f"""
-        ----- QAP -----
-        L = {self.L}
-        R = {self.R}
-        O = {self.O}
-        T = {self.T}
-        """
-        return s
-
-
 class ProverKey:
     def __init__(
         self,
@@ -59,22 +47,6 @@ class ProverKey:
         self.K_delta_G1 = K_delta_G1
         self.target_G1 = target_G1
 
-    def __repr__(self):
-        s = f"""
------ Prover Key -----
-[τ]G1 = {[normalize(point) for point in self.tau_G1]}
-[τ]G2 = {[normalize(point) for point in self.tau_G2]}
-[α]G1 = {normalize(self.alpha_G1)}
-[β]G1 = {normalize(self.beta_G1)}
-[β]G2 = {normalize(self.beta_G2)}
-[δ]G1 = {normalize(self.delta_G1)}
-[δ]G2 = {normalize(self.delta_G2)}
-[K/δ]G1 = {[normalize(point) for point in self.K_delta_G1]}
-[τT(τ)/δ]G1 = {[normalize(point) for point in self.target_G1]}
-        """
-        return s
-
-
 class VerifierKey:
     def __init__(self, alpha_G1, beta_G2, gamma_G2, delta_G2, K_gamma_G1):
         self.alpha_G1 = alpha_G1
@@ -83,46 +55,11 @@ class VerifierKey:
         self.delta_G2 = delta_G2
         self.K_gamma_G1 = K_gamma_G1
 
-    def __repr__(self):
-        n_vk = self.normalize()
-        s = f"""
------ Verifier Key -----
-[α]G1 = {n_vk.alpha_G1}
-[β]G2 = {n_vk.beta_G2}
-[γ]G2 = {n_vk.gamma_G2}
-[δ]G2 = {n_vk.delta_G2}
-[K/γ]G1 = {n_vk.K_gamma_G1}
-        """
-        return s
-
-    def normalize(self):
-        return VerifierKey(
-            normalize(self.alpha_G1),
-            normalize(self.beta_G2),
-            normalize(self.gamma_G2),
-            normalize(self.delta_G2),
-            [normalize(point) for point in self.K_gamma_G1],
-        )
-
-
 class Proof:
     def __init__(self, A, B, C):
         self.A = A
         self.B = B
         self.C = C
-
-    def __repr__(self):
-        n_proof = self.normalize()
-        s = f"""
------ Proof -----
-A = {n_proof.A}
-B = {n_proof.B}
-C = {n_proof.C}
-        """
-        return s
-
-    def normalize(self):
-        return Proof(normalize(self.A), normalize(self.B), normalize(self.C))
     
 def keygen(qap: QAP):  # -> (ProverKey, VerifierKey)
     # generating toxic waste
@@ -228,8 +165,6 @@ def prove(pk: ProverKey, w: [], qap: QAP):
     C_G1 = add(C_G1, rs_delta_G1)
 
     return Proof(A_G1, B_G2, C_G1)
-
-
 
 def verifier(vk: VerifierKey, w_pub: [], proof: Proof, verbose=False):
     e1 = pairing(proof.B,proof.A)
