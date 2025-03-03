@@ -5,15 +5,15 @@ from py_ecc.bn128 import curve_order
 P_1 = multiply(G1, 5)
 P_2 = multiply(G2, 5)
 
-Q_1 = multiply(G1, 6)
-Q_2 = multiply(G2, 4)
+Q_1 = multiply(G1, 11)
+Q_2 = multiply(G2, 2)
 
 e1 = pairing(Q_2, Q_1)
 e2 = pairing(P_2, P_1)
 eG = pairing(G2, G1)
 
 # Kiểm tra tính song tuyến tính
-if e2 == e1*eG:
+if e2 == e1*eG**3: #25 = 22 + 3
     print("2 Tính chất song tuyến tính đúng")
 else:
     print(" 2 Tính chất song tuyến tính sai")
@@ -31,3 +31,6 @@ print(is_in_G12(e1))  # True nếu e1 thuộc G12
 print(is_in_G12(e2))  # True nếu e1 thuộc G12
 print(is_in_G12(eG))  # True nếu e1 thuộc G12
 print(is_in_G12(G12))  # True nếu e1 thuộc G12
+
+# 200tr:30tr
+# 

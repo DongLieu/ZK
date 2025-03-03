@@ -8,36 +8,28 @@ import galois
 FP = groth16.FP
 p = groth16.p
 
-# f(x,y) = 5*x^3 - 4*x^2*y^2 +13*x*y^2+x^2-10y 
+# f(x,y) = x^3 + x^2*y^2 +x*y^2-x^2+y^4 
 _x = FP(2)
 _y = FP(3)
 _v1 = _x * _x
 _v2 = _y * _y
-_v3 = 5 * _x * _v1
-_v4 = 4 * _v1 * _v2
-out = 5*_x**3 - 4*_x**2*_y**2 + 13*_x*_y**2 + _x**2 - 10*_y
-_witness = FP([1, out, _x, _y, _v1, _v2, _v3, _v4])
+out = _x**3 + _x**2*_y**2 + _x*_y**2 - _x**2 + _y**4
+_witness = FP([1, out, _x, _y, _v1, _v2])
 # ============================================== R1CS =============================================
 
-R = FP([[0, 0, 1, 0, 0, 0, 0, 0],
-         [0, 0, 0, 1, 0, 0, 0, 0],
-         [0, 0, 5, 0, 0, 0, 0, 0],
-         [0, 0, 0, 0, 4, 0, 0, 0],
-         [0, 0, 13, 0, 0, 0, 0, 0]])
+R = FP([ [0, 0, 1, 0, 0, 0],
+         [0, 0, 0, 1, 0, 0],
+         [0, 0, 0, 0, 1, 1]])
 
-L = FP([[0, 0, 1, 0, 0, 0, 0, 0],
-         [0, 0, 0, 1, 0, 0, 0, 0],
-         [0, 0, 0, 0, 1, 0, 0, 0],
-         [0, 0, 0, 0, 0, 1, 0, 0],
-         [0, 0, 0, 0, 0, 1, 0, 0]])
+L = FP([ [0, 0, 1, 0, 0, 0],
+         [0, 0, 0, 1, 0, 0],
+         [0, 0, 1, 0, 0, 1]])
 
-O = FP([[0, 0, 0, 0, 1, 0, 0, 0],
-         [0, 0, 0, 0, 0, 1, 0, 0],
-         [0, 0, 0, 0, 0, 0, 1, 0],
-         [0, 0, 0, 0, 0, 0, 0, 1],
-         [0, 1, 0, 10, FP(p - 1), 0, FP(p - 1), 1]])
+O = FP([ [0, 0, 0, 0, 1, 0],
+         [0, 0, 0, 0, 0, 1],
+         [0, 1, 0, 0, 1, 0]])
 assert all(np.equal(np.matmul(L, _witness) * np.matmul(R, _witness), np.matmul(O, _witness))), "not equal"
-# # ============================================== QAP =============================================
+# ============================================== QAP =============================================
 mtxs = [L, R, O]
 poly_m = []
 
@@ -75,25 +67,23 @@ w_public = groth16.get_witness_public(_pk, _witness)
 ok = groth16.verifier(vk,w_public, proof)
 print(ok)
 
-# # ============================================== proof aggregation =============================================
-_x2 = FP(4)
-_y2 = FP(5)
-_v1_2 = _x2 * _x2
-_v2_2 = _y2 * _y2
-_v3_2 = 5 * _x2 * _v1_2
-_v4_2 = 4 * _v1_2 * _v2_2
-out2 = 5*_x2**3 - 4*_x2**2*_y2**2 + 13*_x2*_y2**2 + _x2**2 - 10*_y2
-_witness2 = FP([1, out2, _x2, _y2, _v1_2, _v2_2, _v3_2, _v4_2])
+# # # ============================================== proof aggregation =============================================
+
+_x = FP(3)
+_y = FP(4)
+_v1 = _x * _x
+_v2 = _y * _y
+out = _x**3 + _x**2*_y**2 + _x*_y**2 - _x**2 + _y**4
+_witness2 = FP([1, out, _x, _y, _v1, _v2])
 
 proof2 = groth16.prove(_pk,_witness2, qap)
+
 w_public2 = groth16.get_witness_public(_pk, _witness2)
 ok = groth16.verifier(vk,w_public2, proof2)
 print(ok)
 
-proof3 = proof2
-proof3.A = groth16.add(proof3.A, proof.A)
-proof3.B = groth16.add(proof3.B, proof.B)
-proof3.C = groth16.add(proof3.C, proof.C)
-w_public3 = w_public2
-ok = groth16.verifier(vk,w_public3, proof3)
-print(ok)
+_witness3 = _witness2 + _witness
+print(_witness)
+print(_witness2)
+print(_witness3)
+assert all(np.equal(np.matmul(L, _witness3) * np.matmul(R, _witness3), np.matmul(O, _witness3))), "not equal"
