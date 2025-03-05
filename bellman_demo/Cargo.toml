@@ -10,3 +10,4 @@ edition = "2021"
 bellman = { git = "https://github.com/zkcrypto/bellman", rev = "9bb30a7bd261f2aa62840b80ed6750c622bebec3" }
 pairing = { git = "https://github.com/zkcrypto/pairing" ,rev = "6f1348f23312b3bbb3556a111ca075072967b26d"}
 bls12_381 = "0.7"
+rand = "0.8"
