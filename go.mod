@@ -2,13 +2,15 @@ module hhh
 
 go 1.23.2
 
-require github.com/consensys/gnark v0.12.0
+require (
+	github.com/consensys/gnark v0.12.0
+	github.com/consensys/gnark-crypto v0.16.0
+)
 
 require (
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/consensys/bavard v0.1.27 // indirect
-	github.com/consensys/gnark-crypto v0.16.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
