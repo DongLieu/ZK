@@ -9,6 +9,7 @@ FP = groth16.FP
 p = groth16.p
 
 # f(x,y) = 5*x^3 - 4*x^2*y^2 +13*x*y^2+x^2-10y 
+# cacu _witness 1
 _x = FP(2)
 _y = FP(3)
 _v1 = _x * _x
@@ -16,7 +17,18 @@ _v2 = _y * _y
 _v3 = 5 * _x * _v1
 _v4 = 4 * _v1 * _v2
 out = 5*_x**3 - 4*_x**2*_y**2 + 13*_x*_y**2 + _x**2 - 10*_y
-_witness = FP([1, out, _x, _y, _v1, _v2, _v3, _v4])
+_witness1 = FP([1, out, _x, _y, _v1, _v2, _v3, _v4])
+# witness chứa cả public (1, out) và private (_x, _y, _v1, _v2, _v3, _v4)
+
+# cacu _witness 2
+_x2 = FP(4)
+_y2 = FP(5)
+_v1_2 = _x2 * _x2
+_v2_2 = _y2 * _y2
+_v3_2 = 5 * _x2 * _v1_2
+_v4_2 = 4 * _v1_2 * _v2_2
+out2 = 5*_x2**3 - 4*_x2**2*_y2**2 + 13*_x2*_y2**2 + _x2**2 - 10*_y2
+_witness2 = FP([1, out2, _x2, _y2, _v1_2, _v2_2, _v3_2, _v4_2])
 # ============================================== R1CS =============================================
 
 R = FP([[0, 0, 1, 0, 0, 0, 0, 0],
@@ -36,7 +48,7 @@ O = FP([[0, 0, 0, 0, 1, 0, 0, 0],
          [0, 0, 0, 0, 0, 0, 1, 0],
          [0, 0, 0, 0, 0, 0, 0, 1],
          [0, 1, 0, 10, FP(p - 1), 0, FP(p - 1), 1]])
-assert all(np.equal(np.matmul(L, _witness) * np.matmul(R, _witness), np.matmul(O, _witness))), "not equal"
+assert all(np.equal(np.matmul(L, _witness1) * np.matmul(R, _witness1), np.matmul(O, _witness1))), "not equal"
 # # ============================================== QAP =============================================
 mtxs = [L, R, O]
 poly_m = []
@@ -69,31 +81,25 @@ for i in range(2, L.shape[0] + 1):
 # # ============================================== groth16 =============================================
 qap = groth16.QAP(Lp, Rp, Op, T)
 _pk,vk = groth16.keygen(qap)
-proof = groth16.prove(_pk,_witness, qap)
 
-w_public = groth16.get_witness_public(_pk, _witness)
-ok = groth16.verifier(vk,w_public, proof)
+# # ============================================== proof 1 =============================================
+proof1 = groth16.prove(_pk,_witness1, qap)
+w_public = groth16.get_witness_public(_pk, _witness1)
+# w_public là phần public, phần còn lại của _witness1 sẽ giữ private để prove
+ok = groth16.verifier(vk,w_public, proof1)
 print(ok)
 
-# # ============================================== proof aggregation =============================================
-_x2 = FP(4)
-_y2 = FP(5)
-_v1_2 = _x2 * _x2
-_v2_2 = _y2 * _y2
-_v3_2 = 5 * _x2 * _v1_2
-_v4_2 = 4 * _v1_2 * _v2_2
-out2 = 5*_x2**3 - 4*_x2**2*_y2**2 + 13*_x2*_y2**2 + _x2**2 - 10*_y2
-_witness2 = FP([1, out2, _x2, _y2, _v1_2, _v2_2, _v3_2, _v4_2])
-
+# # ============================================== proof 2 =============================================
 proof2 = groth16.prove(_pk,_witness2, qap)
 w_public2 = groth16.get_witness_public(_pk, _witness2)
 ok = groth16.verifier(vk,w_public2, proof2)
 print(ok)
 
+# # ============================================== proof aggregation =============================================
 proof3 = proof2
-proof3.A = groth16.add(proof3.A, proof.A)
-proof3.B = groth16.add(proof3.B, proof.B)
-proof3.C = groth16.add(proof3.C, proof.C)
+proof3.A = groth16.add(proof3.A, proof1.A)
+proof3.B = groth16.add(proof3.B, proof1.B)
+proof3.C = groth16.add(proof3.C, proof1.C)
 w_public3 = w_public2
 ok = groth16.verifier(vk,w_public3, proof3)
 print(ok)

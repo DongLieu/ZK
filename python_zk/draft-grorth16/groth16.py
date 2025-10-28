@@ -61,7 +61,7 @@ class Proof:
         self.B = B
         self.C = C
     
-def keygen(qap: QAP):  # -> (ProverKey, VerifierKey)
+def keygen(qap: QAP, verbose=False):  # -> (ProverKey, VerifierKey)
     # generating toxic waste
     alpha = FP(random.randint(2, p - 1))
     beta = FP(random.randint(2, p - 1))
@@ -69,6 +69,12 @@ def keygen(qap: QAP):  # -> (ProverKey, VerifierKey)
     delta = FP(random.randint(2, p - 1))
     tau = FP(random.randint(2, p - 1))
     l=random.randrange(2, qap.L.shape[0])
+
+    if verbose:
+        print("alpha=", alpha)
+        print("beta=", beta)
+        print("delta=", delta)
+        print("tau=", tau)
 
     beta_L = beta * qap.L
     alpha_R = alpha * qap.R
@@ -111,10 +117,10 @@ def keygen(qap: QAP):  # -> (ProverKey, VerifierKey)
 
     vk = VerifierKey(alpha_G1, beta_G2, gamma_G2, delta_G2, K_gamma_G1)
 
-    return pk, vk
+    return pk, vk #,alpha,beta, delta, tau
 
 
-def prove(pk: ProverKey, w: [], qap: QAP):
+def prove(pk: ProverKey, w: [], qap: QAP, verbose=False):
     r = FP(random.randint(2, p - 1))
     s = FP(random.randint(2, p - 1))
 
@@ -144,6 +150,15 @@ def prove(pk: ProverKey, w: [], qap: QAP):
     A_G1 = evaluate_poly(U, pk.tau_G1)
     A_G1 = add(A_G1, pk.alpha_G1)
     A_G1 = add(A_G1, r_delta_G1)
+    if verbose:
+        print("U=", U.coefficients()[::-1])
+        # print(pk.tau_G1)
+        print("r=",r)
+        print("evaluate_poly(U, pk.tau_G1)=",evaluate_poly(U, pk.tau_G1))
+        print("pk.alpha_G1=",pk.alpha_G1)
+        print("pk.r_delta_G1=",r_delta_G1)
+        print("======")
+
 
     B_G2 = evaluate_poly(V, pk.tau_G2)
     B_G2 = add(B_G2, pk.beta_G2)
@@ -164,7 +179,7 @@ def prove(pk: ProverKey, w: [], qap: QAP):
     C_G1 = add(C_G1, Br_G1)
     C_G1 = add(C_G1, rs_delta_G1)
 
-    return Proof(A_G1, B_G2, C_G1)
+    return Proof(A_G1, B_G2, C_G1) #,U.coefficients()[::-1], r
 
 def verifier(vk: VerifierKey, w_pub: [], proof: Proof, verbose=False):
     e1 = pairing(proof.B,proof.A)

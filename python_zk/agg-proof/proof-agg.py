@@ -60,30 +60,64 @@ for i in range(2, L.shape[0] + 1):
 
 # # ============================================== groth16 =============================================
 qap = groth16.QAP(Lp, Rp, Op, T)
-_pk,vk = groth16.keygen(qap)
-proof = groth16.prove(_pk,_witness, qap)
+_pk,vk, alpha, beta, delta, tau = groth16.keygen(qap, verbose=True)
+proof, U, r = groth16.prove(_pk,_witness, qap, verbose=True)
 
 w_public = groth16.get_witness_public(_pk, _witness)
 ok = groth16.verifier(vk,w_public, proof)
+
+# taus = [int(tau**i) for i in range(0, qap.T.degree)]
+tau = [int(tau ** i) for i in range(0, qap.T.degree)]
+print(tau)
+print(U)
+print(int(U[-1])*9)
+# terms = [(groth16.multiply(groth16.multiply(groth16.G1, int(point)), int(coeff))) for point, coeff in zip(tau, U)]
+terms = [(int(coeff)*int(point)) for point, coeff in zip(tau, U)]
+evaluation = int(terms[0])
+eee = groth16.multiply(groth16.G1, int(evaluation))
+print("pppp=", evaluation)
+for i in range(1, len(terms)):
+    evaluation = int(evaluation) + int(terms[i])
+    print("pppp=", evaluation)
+    print("tems=", int(terms[i]))
+    eee = groth16.add(eee, groth16.multiply(groth16.G1, int(terms[i])))
+
+a = int(alpha) + int(delta)*int(r) #+ evaluation
+print(delta)
+print(r)
+A = groth16.multiply(groth16.G1, int(a))
+
+print("++++======++++")
+print(groth16.multiply(groth16.G1, int(evaluation)))
+print(groth16.multiply(groth16.G1, int(alpha)))
+# print(groth16.multiply(groth16.G1, int(delta) * int(r)))
+print(groth16.multiply(groth16.multiply(groth16.G1, int(delta)), int(r)))
+print("++++======++++")
+print(eee)
+print(evaluation)
+print("++++======++++")
+print(A)
+print(proof.A)
 print(ok)
 
+print("00000=", groth16.multiply(groth16.G1, 8))
 # # # ============================================== proof aggregation =============================================
 
-_x = FP(3)
-_y = FP(4)
-_v1 = _x * _x
-_v2 = _y * _y
-out = _x**3 + _x**2*_y**2 + _x*_y**2 - _x**2 + _y**4
-_witness2 = FP([1, out, _x, _y, _v1, _v2])
+# _x = FP(3)
+# _y = FP(4)
+# _v1 = _x * _x
+# _v2 = _y * _y
+# out = _x**3 + _x**2*_y**2 + _x*_y**2 - _x**2 + _y**4
+# _witness2 = FP([1, out, _x, _y, _v1, _v2])
 
-proof2 = groth16.prove(_pk,_witness2, qap)
+# proof2 = groth16.prove(_pk,_witness2, qap)
 
-w_public2 = groth16.get_witness_public(_pk, _witness2)
-ok = groth16.verifier(vk,w_public2, proof2)
-print(ok)
+# w_public2 = groth16.get_witness_public(_pk, _witness2)
+# ok = groth16.verifier(vk,w_public2, proof2)
+# print(ok)
 
-_witness3 = _witness2 + _witness
-print(_witness)
-print(_witness2)
-print(_witness3)
-assert all(np.equal(np.matmul(L, _witness3) * np.matmul(R, _witness3), np.matmul(O, _witness3))), "not equal"
+# _witness3 = _witness2 + _witness
+# print(_witness)
+# print(_witness2)
+# print(_witness3)
+# assert all(np.equal(np.matmul(L, _witness3) * np.matmul(R, _witness3), np.matmul(O, _witness3))), "not equal"
