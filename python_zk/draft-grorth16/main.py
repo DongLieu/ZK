@@ -18,6 +18,7 @@ _v3 = 5 * _x * _v1
 _v4 = 4 * _v1 * _v2
 out = 5*_x**3 - 4*_x**2*_y**2 + 13*_x*_y**2 + _x**2 - 10*_y
 _witness1 = FP([1, out, _x, _y, _v1, _v2, _v3, _v4])
+# witness chứa cả public (1, out) và private (_x, _y, _v1, _v2, _v3, _v4)
 
 # cacu _witness 2
 _x2 = FP(4)
@@ -84,6 +85,7 @@ _pk,vk = groth16.keygen(qap)
 # # ============================================== proof 1 =============================================
 proof1 = groth16.prove(_pk,_witness1, qap)
 w_public = groth16.get_witness_public(_pk, _witness1)
+# w_public là phần public, phần còn lại của _witness1 sẽ giữ private để prove
 ok = groth16.verifier(vk,w_public, proof1)
 print(ok)
 
