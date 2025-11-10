@@ -9,6 +9,7 @@ use sp1_verifier::{Groth16Error, Groth16Verifier};
 use thiserror::Error;
 
 const CONFIG: Item<Config> = Item::new("config");
+const FIB_MODULUS: u32 = 7919;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -16,6 +17,8 @@ pub struct InstantiateMsg {
     pub max_n: Option<u64>,
     /// SP1 Groth16 verifying key bytes (compressed, BN254 curve).
     pub verifying_key: Binary,
+    /// SP1 program verification key hash (`vk.bytes32()`).
+    pub sp1_vkey_hash: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -45,6 +48,7 @@ pub struct ConfigResponse {
     pub owner: String,
     pub max_n: Option<u64>,
     pub verifying_key: Binary,
+    pub sp1_vkey_hash: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -52,6 +56,7 @@ struct Config {
     owner: Addr,
     max_n: Option<u64>,
     verifying_key: Binary,
+    sp1_vkey_hash: String,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -64,8 +69,12 @@ pub enum ContractError {
     Overflow { n: u64 },
     #[error("Failed to deserialize Groth16 verifying key")]
     InvalidVerifyingKey,
+    #[error("Invalid SP1 verifying key hash")]
+    InvalidSp1VkeyHash,
     #[error("Failed to deserialize Groth16 proof")]
     InvalidProofEncoding,
+    #[error("Public values mismatch with provided arguments")]
+    PublicValuesMismatch,
     #[error("Groth16 proof verification failed")]
     ProofVerificationFailed,
 }
@@ -77,10 +86,12 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
+    validate_sp1_vkey_hash(&msg.sp1_vkey_hash)?;
     let config = Config {
         owner: info.sender,
         max_n: msg.max_n,
         verifying_key: msg.verifying_key,
+        sp1_vkey_hash: msg.sp1_vkey_hash,
     };
     CONFIG.save(deps.storage, &config)?;
     Ok(Response::new().add_attribute("method", "instantiate"))
@@ -118,10 +129,11 @@ fn execute_verify(
         return Err(ContractError::InvalidProofEncoding);
     }
 
-    let public_inputs = build_public_inputs(n, claimed_value);
-    Groth16Verifier::verify_gnark_proof(
+    let public_values = build_public_values_bytes(n, claimed_value)?;
+    Groth16Verifier::verify(
         proof_bytes.as_slice(),
-        &public_inputs,
+        public_values.as_slice(),
+        config.sp1_vkey_hash.as_str(),
         config.verifying_key.as_slice(),
     )
     .map_err(map_groth16_error)?;
@@ -137,9 +149,12 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Expected { n } => {
             let value = fibonacci(n).map(Uint128::from).map_err(|err| match err {
-                ContractError::Overflow { n } =>
-                    StdError::generic_err(format!("Fibonacci overflow at n={n}")),
-                ContractError::NTooLarge { .. } => StdError::generic_err("unexpected limit error in query"),
+                ContractError::Overflow { n } => {
+                    StdError::generic_err(format!("Fibonacci overflow at n={n}"))
+                }
+                ContractError::NTooLarge { .. } => {
+                    StdError::generic_err("unexpected limit error in query")
+                }
                 ContractError::Std(err) => err,
                 _ => StdError::generic_err("unexpected verification error in query"),
             })?;
@@ -151,6 +166,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
                 owner: cfg.owner.into_string(),
                 max_n: cfg.max_n,
                 verifying_key: cfg.verifying_key,
+                sp1_vkey_hash: cfg.sp1_vkey_hash,
             })
         }
     }
@@ -166,20 +182,51 @@ fn map_groth16_error(err: Groth16Error) -> ContractError {
     }
 }
 
-fn build_public_inputs(n: u64, value: Uint128) -> [[u8; 32]; 2] {
-    [u64_to_field_bytes(n), u128_to_field_bytes(value.u128())]
+fn build_public_values_bytes(n: u64, claimed_value: Uint128) -> Result<Vec<u8>, ContractError> {
+    if n > u32::MAX as u64 {
+        return Err(ContractError::NTooLarge {
+            n,
+            max: u32::MAX as u64,
+        });
+    }
+    let n_u32 = n as u32;
+
+    let claimed_u32: u32 = claimed_value
+        .u128()
+        .try_into()
+        .map_err(|_| ContractError::PublicValuesMismatch)?;
+
+    let (fib_n, fib_next) = fibonacci_mod_sequence(n_u32);
+    if claimed_u32 != fib_n {
+        return Err(ContractError::PublicValuesMismatch);
+    }
+
+    let mut bytes = Vec::with_capacity(12);
+    bytes.extend_from_slice(&n_u32.to_le_bytes());
+    bytes.extend_from_slice(&fib_n.to_le_bytes());
+    bytes.extend_from_slice(&fib_next.to_le_bytes());
+    Ok(bytes)
 }
 
-fn u64_to_field_bytes(value: u64) -> [u8; 32] {
-    let mut bytes = [0u8; 32];
-    bytes[24..].copy_from_slice(&value.to_be_bytes());
-    bytes
+fn fibonacci_mod_sequence(n: u32) -> (u32, u32) {
+    let mut a: u32 = 0;
+    let mut b: u32 = 1;
+    for _ in 0..n {
+        let next = ((a as u64 + b as u64) % FIB_MODULUS as u64) as u32;
+        a = b;
+        b = next;
+    }
+    (a % FIB_MODULUS, b % FIB_MODULUS)
 }
 
-fn u128_to_field_bytes(value: u128) -> [u8; 32] {
-    let mut bytes = [0u8; 32];
-    bytes[16..].copy_from_slice(&value.to_be_bytes());
-    bytes
+fn validate_sp1_vkey_hash(hash: &str) -> Result<(), ContractError> {
+    if !(hash.starts_with("0x")
+        && hash.len() == 66
+        && hash.chars().skip(2).all(|c| c.is_ascii_hexdigit()))
+    {
+        return Err(ContractError::InvalidSp1VkeyHash);
+    }
+    Ok(())
 }
 
 fn fibonacci(n: u64) -> Result<u128, ContractError> {
@@ -205,6 +252,9 @@ fn fibonacci(n: u64) -> Result<u128, ContractError> {
 mod tests {
     use super::*;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::Binary;
+
+    const DUMMY_HASH: &str = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     #[test]
     fn instantiate_and_config_query() {
@@ -213,6 +263,7 @@ mod tests {
         let msg = InstantiateMsg {
             max_n: Some(50),
             verifying_key: Binary::default(),
+            sp1_vkey_hash: DUMMY_HASH.to_string(),
         };
 
         instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
@@ -222,6 +273,7 @@ mod tests {
         assert_eq!(cfg.owner, "owner");
         assert_eq!(cfg.max_n, Some(50));
         assert_eq!(cfg.verifying_key, Binary::default());
+        assert_eq!(cfg.sp1_vkey_hash, DUMMY_HASH);
     }
 
     #[test]
@@ -235,6 +287,7 @@ mod tests {
             InstantiateMsg {
                 max_n: None,
                 verifying_key: Binary::default(),
+                sp1_vkey_hash: DUMMY_HASH.to_string(),
             },
         )
         .unwrap();
@@ -264,6 +317,7 @@ mod tests {
             InstantiateMsg {
                 max_n: Some(20),
                 verifying_key: Binary::default(),
+                sp1_vkey_hash: DUMMY_HASH.to_string(),
             },
         )
         .unwrap();
@@ -299,5 +353,21 @@ mod tests {
     fn fibonacci_overflow_detection() {
         let err = fibonacci(187).unwrap_err();
         assert_eq!(err, ContractError::Overflow { n: 187 });
+    }
+
+    #[test]
+    fn build_public_values_matches_fixture() {
+        let bytes = build_public_values_bytes(20, Uint128::from(6765u128)).unwrap();
+        assert_eq!(
+            bytes,
+            vec![0x14, 0, 0, 0, 0x6d, 0x1a, 0, 0, 0xd3, 0x0b, 0, 0]
+        );
+    }
+
+    #[test]
+    fn fibonacci_mod_sequence_matches_program() {
+        let (fib_n, fib_next) = fibonacci_mod_sequence(20);
+        assert_eq!(fib_n, 6765);
+        assert_eq!(fib_next, 3027);
     }
 }

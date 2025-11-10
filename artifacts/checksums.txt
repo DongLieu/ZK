@@ -1,1 +1,1 @@
-f0ece9ce47ff1aedf6493f07e4443724ddd7fe7e2fa1208df03ccab390f5d236  fib_verifier.wasm
+d98b4933f03d3eeca2d14c87f6640017ac93f89c2b5ae753d6f7b1fc3801be0a  fib_verifier.wasm
