@@ -1,0 +1,4 @@
+   0.035583875s  INFO prepare_target{force=false package_id=fib-verifier v0.1.0 (/Users/donglieu/1125/contract-test/contract/contracts/fib-verifier) target="fib_verifier"}: cargo::core::compiler::fingerprint: fingerprint dirty for fib-verifier v0.1.0 (/Users/donglieu/1125/contract-test/contract/contracts/fib-verifier)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("fib_verifier", ["cdylib", "rlib"], "/Users/donglieu/1125/contract-test/contract/contracts/fib-verifier/src/lib.rs", Edition2021) }
+   0.035614833s  INFO prepare_target{force=false package_id=fib-verifier v0.1.0 (/Users/donglieu/1125/contract-test/contract/contracts/fib-verifier) target="fib_verifier"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(Stale)
+    Checking fib-verifier v0.1.0 (/Users/donglieu/1125/contract-test/contract/contracts/fib-verifier)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.41s

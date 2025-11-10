@@ -1,0 +1,12 @@
+/Users/donglieu/1125/contract-test/contract/target/debug/deps/libthiserror-0244cb92aab8ee92.rmeta: /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs /Users/donglieu/1125/contract-test/contract/target/debug/build/thiserror-bdc51de10361ce14/out/private.rs
+
+/Users/donglieu/1125/contract-test/contract/target/debug/deps/thiserror-0244cb92aab8ee92.d: /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs /Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs /Users/donglieu/1125/contract-test/contract/target/debug/build/thiserror-bdc51de10361ce14/out/private.rs
+
+/Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs:
+/Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs:
+/Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs:
+/Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs:
+/Users/donglieu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs:
+/Users/donglieu/1125/contract-test/contract/target/debug/build/thiserror-bdc51de10361ce14/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/donglieu/1125/contract-test/contract/target/debug/build/thiserror-bdc51de10361ce14/out
