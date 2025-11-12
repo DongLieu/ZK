@@ -16,13 +16,22 @@ func init() {
 	rootCmd.AddCommand(startGroth16Cmd)
 	rootCmd.AddCommand(startGroth16FibCmd)
 	rootCmd.AddCommand(startPlonkyCmd)
+	startGroth16Cmd.Flags().StringVar(&groth16Mode, "mode", "demo", "Groth16 mode: demo, produce, verify")
 }
 
 var startGroth16Cmd = &cobra.Command{
-	Use:   "start-groth16",
-	Short: "Start groth16",
+	Use:     "start-groth16",
+	Short:   "Start groth16",
+	Example: "go run main.go start-groth16 --mode produce; go run main.go start-groth16 --mode verify",
 	Run: func(cmd *cobra.Command, args []string) {
-		runGroth16()
+		switch groth16Mode {
+		case "produce":
+			runGroth16Produce()
+		case "verify":
+			runGroth16Verify()
+		default:
+			runGroth16()
+		}
 	},
 }
 
