@@ -14,6 +14,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(startGroth16Cmd)
+	rootCmd.AddCommand(startGroth16FibCmd)
 	rootCmd.AddCommand(startPlonkyCmd)
 }
 
@@ -22,6 +23,14 @@ var startGroth16Cmd = &cobra.Command{
 	Short: "Start groth16",
 	Run: func(cmd *cobra.Command, args []string) {
 		runGroth16()
+	},
+}
+
+var startGroth16FibCmd = &cobra.Command{
+	Use:   "start-groth16-fib",
+	Short: "Start groth16 with fibonatri circuit",
+	Run: func(cmd *cobra.Command, args []string) {
+		runGroth16_fib()
 	},
 }
 
