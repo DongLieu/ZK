@@ -10,12 +10,14 @@ import (
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 )
 
 const (
 	storeDir              = "store"
+	circuitFilename       = "poly_circuit.r1cs"
 	provingKeyFilename    = "poly_proving.key"
 	verifyingKeyFilename  = "poly_verifying.key"
 	proofFilename         = "poly_proof.bin"
@@ -57,6 +59,18 @@ func evaluatePolynomial(x, y int64) int64 {
 	return 5*x*x*x - 4*x*x*y*y + 13*x*y*y + x*x - 10*y
 }
 
+func sampleAssignment() PolyCircuit {
+	const (
+		xVal = int64(2)
+		yVal = int64(3)
+	)
+	return PolyCircuit{
+		X:      xVal,
+		Y:      yVal,
+		Result: evaluatePolynomial(xVal, yVal),
+	}
+}
+
 func runGroth16() {
 	var circuit PolyCircuit
 
@@ -70,13 +84,7 @@ func runGroth16() {
 		log.Fatalf("setup error: %v", err)
 	}
 
-	x := int64(2)
-	y := int64(3)
-	assignment := PolyCircuit{
-		X:      x,
-		Y:      y,
-		Result: evaluatePolynomial(x, y),
-	}
+	assignment := sampleAssignment()
 
 	witness, err := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
 	if err != nil {
@@ -112,13 +120,7 @@ func runGroth16Produce() {
 		log.Fatalf("setup error: %v", err)
 	}
 
-	x := int64(2)
-	y := int64(3)
-	assignment := PolyCircuit{
-		X:      x,
-		Y:      y,
-		Result: evaluatePolynomial(x, y),
-	}
+	assignment := sampleAssignment()
 
 	witnessInstance, err := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
 	if err != nil {
@@ -139,6 +141,9 @@ func runGroth16Produce() {
 		log.Fatalf("store dir error: %v", err)
 	}
 
+	if err := writeConstraintSystem(circuitPath(), cs); err != nil {
+		log.Fatalf("write circuit error: %v", err)
+	}
 	if err := writeToFile(provingKeyPath(), pk); err != nil {
 		log.Fatalf("write proving key error: %v", err)
 	}
@@ -176,6 +181,42 @@ func runGroth16Verify() {
 	fmt.Println("Stored Groth16 artifacts verified successfully!")
 }
 
+func runGroth16ProveFromStore() {
+	cs, err := readConstraintSystem(circuitPath())
+	if err != nil {
+		log.Fatalf("read circuit error: %v", err)
+	}
+	pk, err := readProvingKey(provingKeyPath())
+	if err != nil {
+		log.Fatalf("read proving key error: %v", err)
+	}
+
+	assignment := sampleAssignment()
+	witnessInstance, err := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
+	if err != nil {
+		log.Fatalf("witness error: %v", err)
+	}
+
+	proof, err := groth16.Prove(cs, pk, witnessInstance)
+	if err != nil {
+		log.Fatalf("prove error: %v", err)
+	}
+
+	publicWitness, err := witnessInstance.Public()
+	if err != nil {
+		log.Fatalf("public witness error: %v", err)
+	}
+
+	if err := writeToFile(proofPath(), proof); err != nil {
+		log.Fatalf("write proof error: %v", err)
+	}
+	if err := writeToFile(publicWitnessPath(), publicWitness); err != nil {
+		log.Fatalf("write public witness error: %v", err)
+	}
+
+	fmt.Println("Proof regenerated from stored circuit and proving key.")
+}
+
 func ensureStoreDir() error {
 	return os.MkdirAll(storeDir, 0o755)
 }
@@ -194,6 +235,10 @@ func proofPath() string {
 
 func publicWitnessPath() string {
 	return filepath.Join(storeDir, publicWitnessFilename)
+}
+
+func circuitPath() string {
+	return filepath.Join(storeDir, circuitFilename)
 }
 
 func writeToFile(path string, wt io.WriterTo) error {
@@ -250,4 +295,43 @@ func readWitness(path string) (witness.Witness, error) {
 		return nil, err
 	}
 	return w, nil
+}
+
+func readProvingKey(path string) (groth16.ProvingKey, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	pk := groth16.NewProvingKey(ecc.BN254)
+	if _, err := pk.ReadFrom(file); err != nil {
+		return nil, err
+	}
+	return pk, nil
+}
+
+func writeConstraintSystem(path string, cs constraint.ConstraintSystem) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = cs.WriteTo(file)
+	return err
+}
+
+func readConstraintSystem(path string) (constraint.ConstraintSystem, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	cs := groth16.NewCS(ecc.BN254)
+	if _, err := cs.ReadFrom(file); err != nil {
+		return nil, err
+	}
+	return cs, nil
 }
