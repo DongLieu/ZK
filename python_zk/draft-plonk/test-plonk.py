@@ -1,4 +1,4 @@
-import plonk
+winimport plonk
 
 # Build the same arithmetic relation used by draft-grorth16/test-groth16.py:
 # f(x, y) = 5x^3 - 4x^2y^2 + 13xy^2 + x^2 - 10y.
