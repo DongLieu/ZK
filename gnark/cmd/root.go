@@ -8,8 +8,8 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "streamtxd",
-	Short: "Stream tx is stream tx mainnet to forknet",
+	Use:   "grarktestd",
+	Short: "grarktestd run with circuits",
 }
 
 func init() {
