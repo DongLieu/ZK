@@ -1,5 +1,6 @@
 
 # Import module
+import random
 import groth16
 import numpy as np
 import galois
@@ -7,24 +8,12 @@ import galois
 FP = groth16.FP
 p = groth16.p
 
-TRANSCRIPT_ALPHA = FP(7)
-TRANSCRIPT_BETA = FP(11)
-TRANSCRIPT_GAMMA = FP(13)
-TRANSCRIPT_DELTA = FP(17)
-TRANSCRIPT_TAU = FP(19)
+NUM_CONTRIBUTORS = 3
 TRANSCRIPT_NUM_PUBLIC = 2
 
 
 def fp_to_int(value):
     return int(value) % p
-
-
-def g1_from_scalar(value):
-    return groth16.multiply(groth16.G1, fp_to_int(value))
-
-
-def g2_from_scalar(value):
-    return groth16.multiply(groth16.G2, fp_to_int(value))
 
 
 def _normalize_g1(point):
@@ -66,41 +55,135 @@ def serialize_g2(point):
     ]
 
 
-def build_transcript(qap, alpha, beta, gamma, delta, tau, num_public):
-    tau_pows = [tau ** i for i in range(qap.T.degree)]
-    tau_G1 = [serialize_g1(g1_from_scalar(power)) for power in tau_pows]
-    tau_G2 = [serialize_g2(g2_from_scalar(power)) for power in tau_pows]
+def random_scalar():
+    return FP(random.randint(2, p - 1))
 
-    T_tau = qap.T(tau)
-    target_scalars = [((tau ** i) * T_tau) / delta for i in range(qap.T.degree - 1)]
-    target_G1 = [serialize_g1(g1_from_scalar(value)) for value in target_scalars]
 
-    def basis_points(numerator, denominator):
-        return [
-            serialize_g1(g1_from_scalar((numerator * power) / denominator))
-            for power in tau_pows
-        ]
-
-    transcript = {
-        "num_public": num_public,
-        "tau_g1": tau_G1,
-        "tau_g2": tau_G2,
-        "alpha_g1": serialize_g1(g1_from_scalar(alpha)),
-        "beta_g1": serialize_g1(g1_from_scalar(beta)),
-        "beta_g2": serialize_g2(g2_from_scalar(beta)),
-        "gamma_g2": serialize_g2(g2_from_scalar(gamma)),
-        "delta_g1": serialize_g1(g1_from_scalar(delta)),
-        "delta_g2": serialize_g2(g2_from_scalar(delta)),
-        "target_g1": target_G1,
-        "beta_tau_over_gamma_g1": basis_points(beta, gamma),
-        "alpha_tau_over_gamma_g1": basis_points(alpha, gamma),
-        "tau_over_gamma_g1": basis_points(FP(1), gamma),
-        "beta_tau_over_delta_g1": basis_points(beta, delta),
-        "alpha_tau_over_delta_g1": basis_points(alpha, delta),
-        "tau_over_delta_g1": basis_points(FP(1), delta),
+def initialize_state(tau_length):
+    return {
+        "tau_g1": [groth16.G1 for _ in range(tau_length)],
+        "tau_g2": [groth16.G2 for _ in range(tau_length)],
+        "alpha_g1": groth16.G1,
+        "beta_g1": groth16.G1,
+        "beta_g2": groth16.G2,
+        "gamma_g2": groth16.G2,
+        "delta_g1": groth16.G1,
+        "delta_g2": groth16.G2,
+        "beta_tau_over_gamma_g1": [groth16.G1 for _ in range(tau_length)],
+        "alpha_tau_over_gamma_g1": [groth16.G1 for _ in range(tau_length)],
+        "tau_over_gamma_g1": [groth16.G1 for _ in range(tau_length)],
+        "beta_tau_over_delta_g1": [groth16.G1 for _ in range(tau_length)],
+        "alpha_tau_over_delta_g1": [groth16.G1 for _ in range(tau_length)],
+        "tau_over_delta_g1": [groth16.G1 for _ in range(tau_length)],
     }
 
-    return transcript
+
+def apply_contribution(state, contribution):
+    tau = contribution["tau"]
+    alpha = contribution["alpha"]
+    beta = contribution["beta"]
+    gamma = contribution["gamma"]
+    delta = contribution["delta"]
+
+    gamma_inv = FP(1) / gamma
+    delta_inv = FP(1) / delta
+
+    state["alpha_g1"] = groth16.multiply(state["alpha_g1"], fp_to_int(alpha))
+    state["beta_g1"] = groth16.multiply(state["beta_g1"], fp_to_int(beta))
+    state["beta_g2"] = groth16.multiply(state["beta_g2"], fp_to_int(beta))
+    state["gamma_g2"] = groth16.multiply(state["gamma_g2"], fp_to_int(gamma))
+    state["delta_g1"] = groth16.multiply(state["delta_g1"], fp_to_int(delta))
+    state["delta_g2"] = groth16.multiply(state["delta_g2"], fp_to_int(delta))
+
+    tau_pow = FP(1)
+    for i in range(len(state["tau_g1"])):
+        scalar_tau = fp_to_int(tau_pow)
+        state["tau_g1"][i] = groth16.multiply(state["tau_g1"][i], scalar_tau)
+        state["tau_g2"][i] = groth16.multiply(state["tau_g2"][i], scalar_tau)
+
+        gamma_factor = tau_pow * gamma_inv
+        beta_gamma_factor = gamma_factor * beta
+        alpha_gamma_factor = gamma_factor * alpha
+
+        delta_factor = tau_pow * delta_inv
+        beta_delta_factor = delta_factor * beta
+        alpha_delta_factor = delta_factor * alpha
+
+        state["tau_over_gamma_g1"][i] = groth16.multiply(
+            state["tau_over_gamma_g1"][i], fp_to_int(gamma_factor)
+        )
+        state["beta_tau_over_gamma_g1"][i] = groth16.multiply(
+            state["beta_tau_over_gamma_g1"][i], fp_to_int(beta_gamma_factor)
+        )
+        state["alpha_tau_over_gamma_g1"][i] = groth16.multiply(
+            state["alpha_tau_over_gamma_g1"][i], fp_to_int(alpha_gamma_factor)
+        )
+
+        state["tau_over_delta_g1"][i] = groth16.multiply(
+            state["tau_over_delta_g1"][i], fp_to_int(delta_factor)
+        )
+        state["beta_tau_over_delta_g1"][i] = groth16.multiply(
+            state["beta_tau_over_delta_g1"][i], fp_to_int(beta_delta_factor)
+        )
+        state["alpha_tau_over_delta_g1"][i] = groth16.multiply(
+            state["alpha_tau_over_delta_g1"][i], fp_to_int(alpha_delta_factor)
+        )
+
+        tau_pow *= tau
+
+
+def compute_target_points(state, qap):
+    coeffs = qap.T.coefficients()[::-1]
+    required_len = qap.T.degree - 1 + len(coeffs)
+    assert len(state["tau_over_delta_g1"]) >= required_len
+
+    target_points = []
+    for i in range(qap.T.degree - 1):
+        acc = None
+        for j, coeff in enumerate(coeffs):
+            idx = i + j
+            point = state["tau_over_delta_g1"][idx]
+            scalar = fp_to_int(coeff)
+            if scalar == 0:
+                continue
+            term = groth16.multiply(point, scalar)
+            acc = term if acc is None else groth16.add(acc, term)
+        target_points.append(acc if acc is not None else groth16.G1)
+    return target_points
+
+
+def serialize_transcript(state, target_points, qap, num_public):
+    basis_len = qap.T.degree
+    return {
+        "num_public": num_public,
+        "tau_g1": [serialize_g1(pt) for pt in state["tau_g1"][:basis_len]],
+        "tau_g2": [serialize_g2(pt) for pt in state["tau_g2"][:basis_len]],
+        "alpha_g1": serialize_g1(state["alpha_g1"]),
+        "beta_g1": serialize_g1(state["beta_g1"]),
+        "beta_g2": serialize_g2(state["beta_g2"]),
+        "gamma_g2": serialize_g2(state["gamma_g2"]),
+        "delta_g1": serialize_g1(state["delta_g1"]),
+        "delta_g2": serialize_g2(state["delta_g2"]),
+        "target_g1": [serialize_g1(pt) for pt in target_points],
+        "beta_tau_over_gamma_g1": [
+            serialize_g1(pt) for pt in state["beta_tau_over_gamma_g1"][:basis_len]
+        ],
+        "alpha_tau_over_gamma_g1": [
+            serialize_g1(pt) for pt in state["alpha_tau_over_gamma_g1"][:basis_len]
+        ],
+        "tau_over_gamma_g1": [
+            serialize_g1(pt) for pt in state["tau_over_gamma_g1"][:basis_len]
+        ],
+        "beta_tau_over_delta_g1": [
+            serialize_g1(pt) for pt in state["beta_tau_over_delta_g1"][:basis_len]
+        ],
+        "alpha_tau_over_delta_g1": [
+            serialize_g1(pt) for pt in state["alpha_tau_over_delta_g1"][:basis_len]
+        ],
+        "tau_over_delta_g1": [
+            serialize_g1(pt) for pt in state["tau_over_delta_g1"][:basis_len]
+        ],
+    }
 
 # f(x,y) = 5*x^3 - 4*x^2*y^2 +13*x*y^2+x^2-10y 
 # cacu _witness 1
@@ -174,15 +257,24 @@ for i in range(2, L.shape[0] + 1):
 
 # # ============================================== groth16 =============================================
 qap = groth16.QAP(Lp, Rp, Op, T)
-transcript = build_transcript(
-    qap,
-    TRANSCRIPT_ALPHA,
-    TRANSCRIPT_BETA,
-    TRANSCRIPT_GAMMA,
-    TRANSCRIPT_DELTA,
-    TRANSCRIPT_TAU,
-    TRANSCRIPT_NUM_PUBLIC,
-)
+tau_basis_length = qap.T.degree * 2
+state = initialize_state(tau_basis_length)
+
+def sample_contribution():
+    return {
+        "tau": random_scalar(),
+        "alpha": random_scalar(),
+        "beta": random_scalar(),
+        "gamma": random_scalar(),
+        "delta": random_scalar(),
+    }
+
+
+for _ in range(NUM_CONTRIBUTORS):
+    apply_contribution(state, sample_contribution())
+
+target_points = compute_target_points(state, qap)
+transcript = serialize_transcript(state, target_points, qap, TRANSCRIPT_NUM_PUBLIC)
 _pk,vk = groth16.setup(qap, transcript=transcript)
 
 # # ============================================== proof 1 =============================================
