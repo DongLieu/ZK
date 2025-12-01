@@ -16,6 +16,7 @@ func init() {
 	rootCmd.AddCommand(startGroth16Cmd)
 	rootCmd.AddCommand(startGroth16FibCmd)
 	rootCmd.AddCommand(startPlonkyCmd)
+	rootCmd.AddCommand(cmdDumpCommitInfo)
 	startGroth16Cmd.Flags().StringVar(&groth16Mode, "mode", "demo", "Groth16 mode: demo, produce, verify, prove-from-store")
 }
 
@@ -34,6 +35,15 @@ var startGroth16Cmd = &cobra.Command{
 		default:
 			runGroth16()
 		}
+	},
+}
+
+var cmdDumpCommitInfo = &cobra.Command{
+	Use:     "start-dump",
+	Short:   "Start cmdDumpCommitInfo",
+	Example: "go run main.go start-dump",
+	Run: func(cmd *cobra.Command, args []string) {
+		main_dump_info()
 	},
 }
 
