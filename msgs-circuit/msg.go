@@ -274,8 +274,3 @@ func Decode(txBytes []byte) {
 		fmt.Printf("Signature #%d (base64): %s\n", i+1, base64.StdEncoding.EncodeToString(sig))
 	}
 }
-
-func main() {
-	txBytes := Encode()
-	Decode(txBytes)
-}
