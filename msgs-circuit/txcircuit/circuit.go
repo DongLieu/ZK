@@ -1,4 +1,4 @@
-package main
+package txcircuit
 
 import (
 	"github.com/consensys/gnark/frontend"

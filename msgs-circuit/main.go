@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 
+	txcircuit "github.com/DongLieu/msg-circuit/txcircuit"
+	txcodec "github.com/DongLieu/msg-circuit/txcodec"
+
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
@@ -17,7 +20,7 @@ func main() {
 	// STEP 1: Tạo transaction từ Encode()
 	// ========================================
 	fmt.Println("Step 1: Creating transaction using Encode()...")
-	txBytes := Encode()
+	txBytes := txcodec.Encode()
 	fmt.Printf("Transaction created: %d bytes\n", len(txBytes))
 	fmt.Println()
 
@@ -25,7 +28,7 @@ func main() {
 	// STEP 2: Decode để lấy thông tin cần verify
 	// ========================================
 	fmt.Println("Step 2: Decoding transaction to extract message info...")
-	Decode(txBytes)
+	txcodec.Decode(txBytes)
 	fmt.Println()
 
 	// ========================================
@@ -37,7 +40,7 @@ func main() {
 	txBytesLen := len(txBytes)
 
 	// Extract actual bodyLen from txBytes (byte at position 1)
-	bodyBytesLen := 200  // Increased to accommodate actual size (~165 bytes)
+	bodyBytesLen := 200 // Increased to accommodate actual size (~165 bytes)
 	if len(txBytes) > 1 {
 		actualBodyLen := int(txBytes[1])
 		if actualBodyLen > bodyBytesLen {
@@ -52,7 +55,7 @@ func main() {
 	msgValueLen := 150      // MsgSend protobuf bytes (increased)
 
 	// Tạo circuit definition
-	circuit := NewTxDecodeCircuit(
+	circuit := txcircuit.NewTxDecodeCircuit(
 		txBytesLen,
 		bodyBytesLen,
 		authInfoBytesLen,
@@ -159,8 +162,8 @@ func main() {
 }
 
 // prepareWitness tạo witness data từ transaction bytes
-func prepareWitness(txBytes []byte, txBytesLen, bodyBytesLen, authInfoBytesLen, sigLen, addrLen, msgTypeURLLen, msgValueLen int) *TxDecodeCircuit {
-	witness := NewTxDecodeCircuit(
+func prepareWitness(txBytes []byte, txBytesLen, bodyBytesLen, authInfoBytesLen, sigLen, addrLen, msgTypeURLLen, msgValueLen int) *txcircuit.TxDecodeCircuit {
+	witness := txcircuit.NewTxDecodeCircuit(
 		txBytesLen,
 		bodyBytesLen,
 		authInfoBytesLen,
