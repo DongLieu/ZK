@@ -18,7 +18,7 @@ import (
 	gogoproto "github.com/cosmos/gogoproto/proto"
 )
 
-func main() {
+func Encode() (txBytes []byte) {
 	// ========================================
 	// PART 1: Tạo key, sinh địa chỉ và message
 	// ========================================
@@ -177,7 +177,7 @@ func main() {
 		Signatures:    [][]byte{signature},
 	}
 
-	txBytes, err := protoCodec.Marshal(txRaw)
+	txBytes, err = protoCodec.Marshal(txRaw)
 	if err != nil {
 		panic(err)
 	}
@@ -195,15 +195,23 @@ func main() {
 	fmt.Printf("Size: %d bytes\n", len(txBytes))
 	fmt.Println()
 
+	return txBytes
+}
+
+func Decode(txBytes []byte) {
 	// ========================================
 	// PART 6: DECODING (Reverse process)
 	// ========================================
+	// Setup codec (Protobuf encoder/decoder)
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	types.RegisterInterfaces(interfaceRegistry)
+	protoCodec := codec.NewProtoCodec(interfaceRegistry)
 
 	fmt.Println("========== DECODING ==========")
 
 	// Decode TxRaw
 	var decodedTxRaw txtypes.TxRaw
-	err = protoCodec.Unmarshal(txBytes, &decodedTxRaw)
+	err := protoCodec.Unmarshal(txBytes, &decodedTxRaw)
 	if err != nil {
 		panic(err)
 	}
@@ -235,7 +243,7 @@ func main() {
 	fmt.Println("========== JSON REPRESENTATION ==========")
 
 	// Convert to JSON (for API responses)
-	jsonBytes, err := protoCodec.MarshalJSON(msg)
+	jsonBytes, err := protoCodec.MarshalJSON(&decodedMsg)
 	if err != nil {
 		panic(err)
 	}
@@ -253,8 +261,8 @@ func main() {
 	// ========================================
 
 	fmt.Println("========== SIGN BYTES ==========")
-	fmt.Printf("SignDoc (hex): %s\n", hex.EncodeToString(signDocBytes))
-	fmt.Printf("SignDoc size: %d bytes\n", len(signDocBytes))
+	// fmt.Printf("SignDoc (hex): %s\n", hex.EncodeToString(signDocBytes))
+	// fmt.Printf("SignDoc size: %d bytes\n", len(signDocBytes))
 	fmt.Println("This is what gets hashed and signed by the private key")
 	fmt.Println()
 
@@ -266,13 +274,19 @@ func main() {
 	aminoCodec := codec.NewLegacyAmino()
 	types.RegisterLegacyAminoCodec(aminoCodec)
 
-	aminoBytes, err := aminoCodec.MarshalJSON(msg)
+	aminoBytes, err := aminoCodec.MarshalJSON(&decodedMsg)
 	if err != nil {
 		panic(err)
 	}
-
+	fmt.Println(decodedTxBody.Messages[0].Value)
+	fmt.Println(hex.EncodeToString(decodedTxBody.Messages[0].Value))
 	fmt.Printf("Amino JSON: %s\n", string(aminoBytes))
 	fmt.Printf("Amino size: %d bytes\n", len(aminoBytes))
-	fmt.Printf("Protobuf size: %d bytes\n", len(msgBytes))
-	fmt.Printf("Space saved: %.1f%%\n", (1.0-float64(len(msgBytes))/float64(len(aminoBytes)))*100)
+	fmt.Printf("Protobuf size: %d bytes\n", len(decodedTxBody.Messages[0].Value))
+	fmt.Printf("Space saved: %.1f%%\n", (1.0-float64(len(decodedTxBody.Messages[0].Value))/float64(len(aminoBytes)))*100)
+}
+
+func main() {
+	txBytes := Encode()
+	Decode(txBytes)
 }
