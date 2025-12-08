@@ -142,17 +142,16 @@ func main() {
 func prepareWitness(txBytes []byte, msgType string, fromAddr string, txBytesLen, msgTypeLen, addrLen int) *txcircuit.TxDecodeCircuit {
 	witness := txcircuit.NewTxDecodeCircuit(txBytesLen, msgTypeLen, addrLen)
 
-	txChecksum := 0
 	for i := 0; i < txBytesLen; i++ {
 		if i < len(txBytes) {
-			byteVal := int(txBytes[i])
-			witness.TxBytes[i] = byteVal
-			txChecksum += byteVal
+			value := int(txBytes[i])
+			witness.TxBytes[i] = value
+			witness.PublicTxBytes[i] = value
 		} else {
 			witness.TxBytes[i] = 0
+			witness.PublicTxBytes[i] = 0
 		}
 	}
-	witness.ExpectedTxChecksum = txChecksum
 
 	fillBytes := func(dst []frontend.Variable, data []byte) {
 		for i := range dst {
@@ -165,12 +164,10 @@ func prepareWitness(txBytes []byte, msgType string, fromAddr string, txBytesLen,
 	}
 
 	msgTypeBytes := []byte(msgType)
-	fillBytes(witness.MsgTypeWitness, msgTypeBytes)
 	fillBytes(witness.ExpectedMsgType, msgTypeBytes)
 
 	fromAddrBytes := []byte(fromAddr)
-	fillBytes(witness.FromAddrWitness, fromAddrBytes)
-	fillBytes(witness.ExpectedFromAddr, fromAddrBytes)
+	fillBytes(witness.ExpectedFrom, fromAddrBytes)
 
 	return witness
 }
