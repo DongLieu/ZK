@@ -33,14 +33,14 @@ func newAminoCodec() *codec.LegacyAmino {
 	return amino
 }
 
-func Encode() (txBytes []byte) {
+func Encode() (txBytes []byte, msgType string, fromAddr string) {
 	// ========================================
 	// PART 1: Tạo key, sinh địa chỉ và message
 	// ========================================
 	protoCodec := newProtoCodec()
 
 	privKey := secp256k1.GenPrivKey()
-	fromAddr := sdk.AccAddress(privKey.PubKey().Address()).String()
+	fromAddr = sdk.AccAddress(privKey.PubKey().Address()).String()
 
 	// tạo địa chỉ nhận ngẫu nhiên để minh họa
 	receiverPrivKey := secp256k1.GenPrivKey()
@@ -206,7 +206,7 @@ func Encode() (txBytes []byte) {
 	fmt.Printf("Size: %d bytes\n", len(txBytes))
 	fmt.Println()
 
-	return txBytes
+	return txBytes, anyMsg.TypeUrl, fromAddr
 }
 
 func Decode(txBytes []byte) {

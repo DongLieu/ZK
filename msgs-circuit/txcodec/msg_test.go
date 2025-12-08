@@ -3,6 +3,6 @@ package txcodec
 import "testing"
 
 func TestXxx(t *testing.T) {
-	txBytes := Encode()
+	txBytes, _, _ := Encode()
 	Decode(txBytes)
 }

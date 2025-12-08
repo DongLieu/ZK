@@ -20,7 +20,7 @@ func main() {
 	// STEP 1: Tạo transaction từ Encode()
 	// ========================================
 	fmt.Println("Step 1: Creating transaction using Encode()...")
-	txBytes := txcodec.Encode()
+	txBytes, msgType, fromAddr := txcodec.Encode()
 	fmt.Printf("Transaction created: %d bytes\n", len(txBytes))
 	fmt.Println()
 
@@ -36,34 +36,11 @@ func main() {
 	// ========================================
 	fmt.Println("Step 3: Setting up ZK circuit...")
 
-	// Định nghĩa sizes cho circuit (ước lượng từ txBytes)
 	txBytesLen := len(txBytes)
+	msgTypeLen := len(msgType)
+	fromAddrLen := len(fromAddr)
 
-	// Extract actual bodyLen from txBytes (byte at position 1)
-	bodyBytesLen := 200 // Increased to accommodate actual size (~165 bytes)
-	if len(txBytes) > 1 {
-		actualBodyLen := int(txBytes[1])
-		if actualBodyLen > bodyBytesLen {
-			bodyBytesLen = actualBodyLen + 10 // Add buffer
-		}
-	}
-
-	authInfoBytesLen := 100 // Increased size
-	sigLen := 64            // ECDSA signature length
-	addrLen := 50           // Bech32 address length (increased)
-	msgTypeURLLen := 50     // "/cosmos.bank.v1beta1.MsgSend" length
-	msgValueLen := 150      // MsgSend protobuf bytes (increased)
-
-	// Tạo circuit definition
-	circuit := txcircuit.NewTxDecodeCircuit(
-		txBytesLen,
-		bodyBytesLen,
-		authInfoBytesLen,
-		sigLen,
-		addrLen,
-		msgTypeURLLen,
-		msgValueLen,
-	)
+	circuit := txcircuit.NewTxDecodeCircuit(txBytesLen, msgTypeLen, fromAddrLen)
 
 	fmt.Printf("Circuit created with TxBytes size: %d\n", txBytesLen)
 	fmt.Println()
@@ -103,7 +80,7 @@ func main() {
 	fmt.Println("Step 6: Preparing witness data...")
 
 	// Tạo witness với actual data từ transaction
-	witness := prepareWitness(txBytes, txBytesLen, bodyBytesLen, authInfoBytesLen, sigLen, addrLen, msgTypeURLLen, msgValueLen)
+	witness := prepareWitness(txBytes, msgType, fromAddr, txBytesLen, msgTypeLen, fromAddrLen)
 
 	fmt.Println("Witness prepared!")
 	fmt.Println()
@@ -153,105 +130,47 @@ func main() {
 	// ========================================
 	fmt.Println("========== VERIFICATION SUMMARY ==========")
 	fmt.Println("✅ Transaction was successfully encoded")
-	fmt.Println("✅ Circuit verified that TxBytes contains the expected MsgSend")
+	fmt.Println("✅ Circuit verified the MsgSend type URL")
+	fmt.Println("✅ Circuit verified the sender address matches the public input")
 	fmt.Println("✅ Zero-knowledge proof generated and verified")
 	fmt.Println()
-	fmt.Println("This proves that the transaction bytes contain a valid MsgSend")
-	fmt.Println("with the expected FromAddress, ToAddress, and Amount,")
-	fmt.Println("without revealing the full transaction details!")
+	fmt.Println("This proves that the transaction bytes are bound to the public msgType")
+	fmt.Println("and sender address without revealing any other transaction details.")
 }
 
 // prepareWitness tạo witness data từ transaction bytes
-func prepareWitness(txBytes []byte, txBytesLen, bodyBytesLen, authInfoBytesLen, sigLen, addrLen, msgTypeURLLen, msgValueLen int) *txcircuit.TxDecodeCircuit {
-	witness := txcircuit.NewTxDecodeCircuit(
-		txBytesLen,
-		bodyBytesLen,
-		authInfoBytesLen,
-		sigLen,
-		addrLen,
-		msgTypeURLLen,
-		msgValueLen,
-	)
+func prepareWitness(txBytes []byte, msgType string, fromAddr string, txBytesLen, msgTypeLen, addrLen int) *txcircuit.TxDecodeCircuit {
+	witness := txcircuit.NewTxDecodeCircuit(txBytesLen, msgTypeLen, addrLen)
 
-	// Fill TxBytes from actual transaction
-	for i := 0; i < len(txBytes) && i < txBytesLen; i++ {
-		witness.TxBytes[i] = txBytes[i]
-	}
-
-	// Pad remaining TxBytes with zeros
-	for i := len(txBytes); i < txBytesLen; i++ {
-		witness.TxBytes[i] = 0
-	}
-
-	// TODO: Extract actual values từ transaction decode
-	// Hiện tại dùng placeholder values để demo
-
-	// ExpectedMsgTypeHash: hash của "/cosmos.bank.v1beta1.MsgSend"
-	msgTypeStr := "/cosmos.bank.v1beta1.MsgSend"
-	msgTypeHash := 0
-	for _, ch := range msgTypeStr {
-		msgTypeHash += int(ch)
-	}
-	witness.ExpectedMsgTypeHash = msgTypeHash
-
-	// Fill MsgTypeURL
-	for i := 0; i < len(msgTypeStr) && i < msgTypeURLLen; i++ {
-		witness.MsgTypeURL[i] = msgTypeStr[i]
-	}
-	// Pad remaining with zeros
-	for i := len(msgTypeStr); i < msgTypeURLLen; i++ {
-		witness.MsgTypeURL[i] = 0
-	}
-
-	// Extract BodyBytes from TxBytes (simplified)
-	// TxRaw structure: tag(1) + len(1) + BodyBytes + ...
-	if len(txBytes) > 2 {
-		// bodyLen := int(txBytes[1])
-		// Extract all available bytes (up to bodyBytesLen)
-		for i := 0; i < bodyBytesLen && (2+i) < len(txBytes); i++ {
-			witness.BodyBytes[i] = txBytes[2+i]
+	txChecksum := 0
+	for i := 0; i < txBytesLen; i++ {
+		if i < len(txBytes) {
+			byteVal := int(txBytes[i])
+			witness.TxBytes[i] = byteVal
+			txChecksum += byteVal
+		} else {
+			witness.TxBytes[i] = 0
 		}
-		// Pad remaining with zeros only if we run out of txBytes
-		for i := len(txBytes) - 2; i < bodyBytesLen; i++ {
-			if i >= 0 {
-				witness.BodyBytes[i] = 0
+	}
+	witness.ExpectedTxChecksum = txChecksum
+
+	fillBytes := func(dst []frontend.Variable, data []byte) {
+		for i := range dst {
+			if i < len(data) {
+				dst[i] = int(data[i])
+			} else {
+				dst[i] = 0
 			}
 		}
 	}
 
-	// Fill AuthInfoBytes and Signatures with zeros (placeholder)
-	for i := 0; i < authInfoBytesLen; i++ {
-		witness.AuthInfoBytes[i] = 0
-	}
-	for i := 0; i < sigLen; i++ {
-		witness.Signatures[i] = 0
-	}
+	msgTypeBytes := []byte(msgType)
+	fillBytes(witness.MsgTypeWitness, msgTypeBytes)
+	fillBytes(witness.ExpectedMsgType, msgTypeBytes)
 
-	// Fill MsgValue with zeros (placeholder)
-	for i := 0; i < msgValueLen; i++ {
-		witness.MsgValue[i] = 0
-	}
-
-	// Placeholder cho addresses và amount
-	// Trong thực tế cần parse từ decoded transaction
-	exampleAddr := "cosmos1..."
-	for i := 0; i < len(exampleAddr) && i < addrLen; i++ {
-		witness.ExpectedFromAddr[i] = exampleAddr[i]
-		witness.DecodedFromAddr[i] = exampleAddr[i]
-		witness.ExpectedToAddr[i] = exampleAddr[i]
-		witness.DecodedToAddr[i] = exampleAddr[i]
-	}
-	// Pad addresses with zeros
-	for i := len(exampleAddr); i < addrLen; i++ {
-		witness.ExpectedFromAddr[i] = 0
-		witness.DecodedFromAddr[i] = 0
-		witness.ExpectedToAddr[i] = 0
-		witness.DecodedToAddr[i] = 0
-	}
-
-	// Example amount: 1000000 uatom
-	witness.ExpectedAmount = 1000000
-	witness.DecodedAmount = 1000000
+	fromAddrBytes := []byte(fromAddr)
+	fillBytes(witness.FromAddrWitness, fromAddrBytes)
+	fillBytes(witness.ExpectedFromAddr, fromAddrBytes)
 
 	return witness
 }
