@@ -12,16 +12,32 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/std"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	gogoproto "github.com/cosmos/gogoproto/proto"
 )
 
+func newProtoCodec() *codec.ProtoCodec {
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	std.RegisterInterfaces(interfaceRegistry)
+	types.RegisterInterfaces(interfaceRegistry)
+	return codec.NewProtoCodec(interfaceRegistry)
+}
+
+func newAminoCodec() *codec.LegacyAmino {
+	amino := codec.NewLegacyAmino()
+	std.RegisterLegacyAminoCodec(amino)
+	types.RegisterLegacyAminoCodec(amino)
+	return amino
+}
+
 func Encode() (txBytes []byte) {
 	// ========================================
 	// PART 1: Tạo key, sinh địa chỉ và message
 	// ========================================
+	protoCodec := newProtoCodec()
 
 	privKey := secp256k1.GenPrivKey()
 	fromAddr := sdk.AccAddress(privKey.PubKey().Address()).String()
@@ -54,11 +70,6 @@ func Encode() (txBytes []byte) {
 	// ========================================
 	// PART 2: PROTOBUF ENCODING
 	// ========================================
-
-	// Setup codec (Protobuf encoder/decoder)
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	types.RegisterInterfaces(interfaceRegistry)
-	protoCodec := codec.NewProtoCodec(interfaceRegistry)
 
 	// Marshal message to protobuf binary
 	msgBytes, err := protoCodec.Marshal(msg)
@@ -199,91 +210,76 @@ func Encode() (txBytes []byte) {
 }
 
 func Decode(txBytes []byte) {
-	// ========================================
-	// PART 6: DECODING (Reverse process)
-	// ========================================
-	// Setup codec (Protobuf encoder/decoder)
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	types.RegisterInterfaces(interfaceRegistry)
-	protoCodec := codec.NewProtoCodec(interfaceRegistry)
+	protoCodec := newProtoCodec()
+	aminoCodec := newAminoCodec()
 
 	fmt.Println("========== DECODING ==========")
 
-	// Decode TxRaw
 	var decodedTxRaw txtypes.TxRaw
-	err := protoCodec.Unmarshal(txBytes, &decodedTxRaw)
-	if err != nil {
+	if err := protoCodec.Unmarshal(txBytes, &decodedTxRaw); err != nil {
 		panic(err)
 	}
 
-	// Decode TxBody
 	var decodedTxBody txtypes.TxBody
-	err = protoCodec.Unmarshal(decodedTxRaw.BodyBytes, &decodedTxBody)
-	if err != nil {
+	if err := protoCodec.Unmarshal(decodedTxRaw.BodyBytes, &decodedTxBody); err != nil {
 		panic(err)
 	}
 
-	// Decode Message từ Any
-	var decodedMsg types.MsgSend
-	err = protoCodec.Unmarshal(decodedTxBody.Messages[0].Value, &decodedMsg)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("Decoded Message:\n")
-	fmt.Printf("  From: %s\n", decodedMsg.FromAddress)
-	fmt.Printf("  To: %s\n", decodedMsg.ToAddress)
-	fmt.Printf("  Amount: %s\n", decodedMsg.Amount)
+	fmt.Printf("Memo: %s\n", decodedTxBody.Memo)
+	fmt.Printf("Messages: %d\n", len(decodedTxBody.Messages))
 	fmt.Println()
 
-	// ========================================
-	// PART 7: JSON REPRESENTATION
-	// ========================================
+	for i, anyMsg := range decodedTxBody.Messages {
+		fmt.Printf("-- Message #%d --\n", i+1)
+		fmt.Printf("TypeURL: %s\n", anyMsg.TypeUrl)
+		fmt.Printf("Size: %d bytes\n", len(anyMsg.Value))
+		fmt.Printf("Value (hex): %s\n", hex.EncodeToString(anyMsg.Value))
+		fmt.Printf("Value (base64): %s\n", base64.StdEncoding.EncodeToString(anyMsg.Value))
 
-	fmt.Println("========== JSON REPRESENTATION ==========")
+		var sdkMsg sdk.Msg
+		if err := protoCodec.UnpackAny(anyMsg, &sdkMsg); err != nil {
+			fmt.Printf("  ❌ unable to unpack SDK message: %v\n\n", err)
+			continue
+		}
 
-	// Convert to JSON (for API responses)
-	jsonBytes, err := protoCodec.MarshalJSON(&decodedMsg)
-	if err != nil {
-		panic(err)
+		msgProto, ok := sdkMsg.(gogoproto.Message)
+		if !ok {
+			fmt.Println("  ❌ message does not implement proto.Message")
+			fmt.Println()
+			continue
+		}
+
+		jsonBytes, err := protoCodec.MarshalInterfaceJSON(msgProto)
+		if err != nil {
+			fmt.Printf("  ❌ failed to marshal JSON: %v\n\n", err)
+			continue
+		}
+
+		var prettyJSON map[string]interface{}
+		if err := json.Unmarshal(jsonBytes, &prettyJSON); err != nil {
+			fmt.Printf("  JSON: %s\n", string(jsonBytes))
+		} else {
+			prettyBytes, _ := json.MarshalIndent(prettyJSON, "", "  ")
+			fmt.Printf("  JSON:\n%s\n", string(prettyBytes))
+		}
+
+		if aminoBytes, err := aminoCodec.MarshalJSON(msgProto); err == nil {
+			fmt.Printf("  Amino JSON: %s\n", string(aminoBytes))
+			fmt.Printf("  Proto bytes: %d | Amino bytes: %d\n", len(anyMsg.Value), len(aminoBytes))
+		} else {
+			fmt.Printf("  Amino encoding unavailable: %v\n", err)
+		}
+
+		fmt.Println()
 	}
-
-	// Pretty print
-	var prettyJSON map[string]interface{}
-	json.Unmarshal(jsonBytes, &prettyJSON)
-	prettyBytes, _ := json.MarshalIndent(prettyJSON, "", "  ")
-
-	fmt.Printf("Message as JSON:\n%s\n", string(prettyBytes))
-	fmt.Println()
-
-	// ========================================
-	// PART 8: SIGN BYTES (for signing)
-	// ========================================
 
 	fmt.Println("========== SIGN BYTES ==========")
-	// fmt.Printf("SignDoc (hex): %s\n", hex.EncodeToString(signDocBytes))
-	// fmt.Printf("SignDoc size: %d bytes\n", len(signDocBytes))
-	fmt.Println("This is what gets hashed and signed by the private key")
-	fmt.Println()
-
-	// ========================================
-	// BONUS: Comparison with Amino (Legacy)
-	// ========================================
-
-	fmt.Println("========== AMINO ENCODING (LEGACY) ==========")
-	aminoCodec := codec.NewLegacyAmino()
-	types.RegisterLegacyAminoCodec(aminoCodec)
-
-	aminoBytes, err := aminoCodec.MarshalJSON(&decodedMsg)
-	if err != nil {
-		panic(err)
+	fmt.Printf("BodyBytes (hex): %s\n", hex.EncodeToString(decodedTxRaw.BodyBytes))
+	fmt.Printf("AuthInfoBytes (hex): %s\n", hex.EncodeToString(decodedTxRaw.AuthInfoBytes))
+	for i, sig := range decodedTxRaw.Signatures {
+		fmt.Printf("Signature #%d (hex): %s\n", i+1, hex.EncodeToString(sig))
+		fmt.Printf("Signature #%d (base64): %s\n", i+1, base64.StdEncoding.EncodeToString(sig))
 	}
-	fmt.Println(decodedTxBody.Messages[0].Value)
-	fmt.Println(hex.EncodeToString(decodedTxBody.Messages[0].Value))
-	fmt.Printf("Amino JSON: %s\n", string(aminoBytes))
-	fmt.Printf("Amino size: %d bytes\n", len(aminoBytes))
-	fmt.Printf("Protobuf size: %d bytes\n", len(decodedTxBody.Messages[0].Value))
-	fmt.Printf("Space saved: %.1f%%\n", (1.0-float64(len(decodedTxBody.Messages[0].Value))/float64(len(aminoBytes)))*100)
 }
 
 func main() {
