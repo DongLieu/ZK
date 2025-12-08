@@ -242,14 +242,7 @@ func Decode(txBytes []byte) {
 			continue
 		}
 
-		msgProto, ok := sdkMsg.(gogoproto.Message)
-		if !ok {
-			fmt.Println("  ❌ message does not implement proto.Message")
-			fmt.Println()
-			continue
-		}
-
-		jsonBytes, err := protoCodec.MarshalInterfaceJSON(msgProto)
+		jsonBytes, err := protoCodec.MarshalInterfaceJSON(sdkMsg)
 		if err != nil {
 			fmt.Printf("  ❌ failed to marshal JSON: %v\n\n", err)
 			continue
@@ -263,7 +256,7 @@ func Decode(txBytes []byte) {
 			fmt.Printf("  JSON:\n%s\n", string(prettyBytes))
 		}
 
-		if aminoBytes, err := aminoCodec.MarshalJSON(msgProto); err == nil {
+		if aminoBytes, err := aminoCodec.MarshalJSON(sdkMsg); err == nil {
 			fmt.Printf("  Amino JSON: %s\n", string(aminoBytes))
 			fmt.Printf("  Proto bytes: %d | Amino bytes: %d\n", len(anyMsg.Value), len(aminoBytes))
 		} else {
