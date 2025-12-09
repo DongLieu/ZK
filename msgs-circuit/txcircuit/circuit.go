@@ -2,13 +2,20 @@ package txcircuit
 
 import "github.com/consensys/gnark/frontend"
 
-// TxDecodeCircuit chứng minh TxBytes chứa MsgSend với TypeURL và địa chỉ gửi
-// khớp public input.
+// CoinPublic gom denom + amount (dạng chuỗi bytes) làm public input.
+type CoinPublic struct {
+	Denom  []frontend.Variable `gnark:",public"`
+	Amount []frontend.Variable `gnark:",public"`
+}
+
+// TxDecodeCircuit chứng minh TxBytes chứa MsgSend với TypeURL, địa chỉ gửi
+// và coin khớp public input.
 type TxDecodeCircuit struct {
 	TxBytes         []frontend.Variable `gnark:",secret"`
 	PublicTxBytes   []frontend.Variable `gnark:",public"`
 	ExpectedMsgType []frontend.Variable `gnark:",public"`
 	ExpectedFrom    []frontend.Variable `gnark:",public"`
+	ExpectedCoins   CoinPublic
 }
 
 // Define mô tả constraint dựa trên cấu trúc TxRaw do txcodec.Encode sinh ra.
@@ -50,41 +57,99 @@ func (circuit *TxDecodeCircuit) Define(api frontend.API) error {
 		api.AssertIsEqual(tx[typeStart+i], circuit.ExpectedMsgType[i])
 	}
 
-	// tag Any.Value và chiều dài (0x70 với MsgSend encode mặc định)
+	// tag Any.Value và chiều dài
 	valueTagIdx := typeStart + typeLen
 	api.AssertIsEqual(tx[valueTagIdx], 0x12)
 
 	valueLenIdx := valueTagIdx + 1
-	valueLen, firstMSB := decodeVarintByte(api, tx[valueLenIdx])
-	highLen, highMSB := decodeVarintByte(api, tx[valueLenIdx+1])
+	valueLenLow, firstMSB := decodeVarintByte(api, tx[valueLenIdx])
+	valueLenHigh, highMSB := decodeVarintByte(api, tx[valueLenIdx+1])
 	api.AssertIsEqual(highMSB, 0)
 
-	valueLen = api.Add(valueLen, api.Mul(firstMSB, api.Mul(highLen, frontend.Variable(128))))
+	valueLen := api.Add(valueLenLow, api.Mul(firstMSB, api.Mul(valueLenHigh, frontend.Variable(128))))
 	api.AssertIsLessOrEqual(frontend.Variable(len(circuit.ExpectedFrom)+2), valueLen)
 
 	valueStartOne := valueLenIdx + 1
 	valueStartTwo := valueLenIdx + 2
 
-	// MsgSend field 1: FromAddress
-	api.AssertIsEqual(api.Select(firstMSB, tx[valueStartTwo], tx[valueStartOne]), 0x0a)
+	selectByte := func(idxOne, idxTwo int) frontend.Variable {
+		return api.Select(firstMSB, tx[idxTwo], tx[idxOne])
+	}
+
+	api.AssertIsEqual(selectByte(valueStartOne, valueStartTwo), 0x0a)
 
 	fromLen := len(circuit.ExpectedFrom)
-	api.AssertIsEqual(api.Select(firstMSB, tx[valueStartTwo+1], tx[valueStartOne+1]), fromLen)
+	api.AssertIsEqual(selectByte(valueStartOne+1, valueStartTwo+1), frontend.Variable(fromLen))
 
-	// so khớp từng byte của địa chỉ gửi
 	fromStartOne := valueStartOne + 2
 	fromStartTwo := valueStartTwo + 2
 	for i := 0; i < fromLen; i++ {
 		api.AssertIsEqual(
-			api.Select(firstMSB, tx[fromStartTwo+i], tx[fromStartOne+i]),
+			selectByte(fromStartOne+i, fromStartTwo+i),
 			circuit.ExpectedFrom[i],
 		)
 	}
 
-	// kiểm tra tag field 2 (ToAddress) nằm sau phần FromAddress
 	toTagIdxOne := fromStartOne + fromLen
 	toTagIdxTwo := fromStartTwo + fromLen
-	api.AssertIsEqual(api.Select(firstMSB, tx[toTagIdxTwo], tx[toTagIdxOne]), 0x12)
+	api.AssertIsEqual(selectByte(toTagIdxOne, toTagIdxTwo), 0x12)
+	api.AssertIsEqual(
+		selectByte(toTagIdxOne+1, toTagIdxTwo+1),
+		frontend.Variable(fromLen),
+	)
+
+	toStartOne := toTagIdxOne + 2
+	toStartTwo := toTagIdxTwo + 2
+
+	coinTagIdxOne := toStartOne + fromLen
+	coinTagIdxTwo := toStartTwo + fromLen
+	api.AssertIsEqual(selectByte(coinTagIdxOne, coinTagIdxTwo), 0x1a)
+
+	coinLenIdxOne := coinTagIdxOne + 1
+	coinLenIdxTwo := coinTagIdxTwo + 1
+	coinLenLow, coinMSB := decodeVarintByte(api, selectByte(coinLenIdxOne, coinLenIdxTwo))
+	coinLenHigh, coinHighMSB := decodeVarintByte(api, selectByte(coinLenIdxOne+1, coinLenIdxTwo+1))
+	api.AssertIsEqual(coinHighMSB, 0)
+	coinLen := api.Add(coinLenLow, api.Mul(coinMSB, api.Mul(coinLenHigh, frontend.Variable(128))))
+
+	coinStartOne := coinLenIdxOne + 1
+	coinStartTwo := coinLenIdxTwo + 2
+
+	api.AssertIsEqual(selectByte(coinStartOne, coinStartTwo), 0x0a)
+	denomLen := len(circuit.ExpectedCoins.Denom)
+	api.AssertIsEqual(selectByte(coinStartOne+1, coinStartTwo+1), frontend.Variable(denomLen))
+
+	denomStartOne := coinStartOne + 2
+	denomStartTwo := coinStartTwo + 2
+	for i := 0; i < denomLen; i++ {
+		api.AssertIsEqual(
+			selectByte(denomStartOne+i, denomStartTwo+i),
+			circuit.ExpectedCoins.Denom[i],
+		)
+	}
+
+	amountTagIdxOne := denomStartOne + denomLen
+	amountTagIdxTwo := denomStartTwo + denomLen
+	api.AssertIsEqual(selectByte(amountTagIdxOne, amountTagIdxTwo), 0x12)
+
+	amountLenVal := selectByte(amountTagIdxOne+1, amountTagIdxTwo+1)
+	amountLen, amountMSB := decodeVarintByte(api, amountLenVal)
+	api.AssertIsEqual(amountMSB, 0)
+	api.AssertIsEqual(amountLen, frontend.Variable(len(circuit.ExpectedCoins.Amount)))
+
+	amountStartOne := amountTagIdxOne + 2
+	amountStartTwo := amountTagIdxTwo + 2
+	for i := 0; i < len(circuit.ExpectedCoins.Amount); i++ {
+		api.AssertIsEqual(
+			selectByte(amountStartOne+i, amountStartTwo+i),
+			circuit.ExpectedCoins.Amount[i],
+		)
+	}
+
+	api.AssertIsLessOrEqual(
+		frontend.Variable(len(circuit.ExpectedCoins.Amount)+denomLen+4),
+		coinLen,
+	)
 
 	return nil
 }
@@ -99,11 +164,15 @@ func decodeVarintByte(api frontend.API, b frontend.Variable) (frontend.Variable,
 }
 
 // NewTxDecodeCircuit builds a circuit with the configured array lengths.
-func NewTxDecodeCircuit(txBytesLen, msgTypeLen, addrLen int) *TxDecodeCircuit {
+func NewTxDecodeCircuit(txBytesLen, msgTypeLen, addrLen, amountLen, denomLen int) *TxDecodeCircuit {
 	return &TxDecodeCircuit{
 		TxBytes:         make([]frontend.Variable, txBytesLen),
 		PublicTxBytes:   make([]frontend.Variable, txBytesLen),
 		ExpectedMsgType: make([]frontend.Variable, msgTypeLen),
 		ExpectedFrom:    make([]frontend.Variable, addrLen),
+		ExpectedCoins: CoinPublic{
+			Denom:  make([]frontend.Variable, denomLen),
+			Amount: make([]frontend.Variable, amountLen),
+		},
 	}
 }

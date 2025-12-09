@@ -20,7 +20,7 @@ func main() {
 	// STEP 1: Tạo transaction từ Encode()
 	// ========================================
 	fmt.Println("Step 1: Creating transaction using Encode()...")
-	txBytes, msgType, fromAddr := txcodec.Encode()
+	txBytes, msgType, fromAddr, amount, denom := txcodec.Encode()
 	fmt.Printf("Transaction created: %d bytes\n", len(txBytes))
 	fmt.Println()
 
@@ -39,8 +39,10 @@ func main() {
 	txBytesLen := len(txBytes)
 	msgTypeLen := len(msgType)
 	fromAddrLen := len(fromAddr)
+	amountLen := len(amount)
+	denomLen := len(denom)
 
-	circuit := txcircuit.NewTxDecodeCircuit(txBytesLen, msgTypeLen, fromAddrLen)
+	circuit := txcircuit.NewTxDecodeCircuit(txBytesLen, msgTypeLen, fromAddrLen, amountLen, denomLen)
 
 	fmt.Printf("Circuit created with TxBytes size: %d\n", txBytesLen)
 	fmt.Println()
@@ -80,7 +82,7 @@ func main() {
 	fmt.Println("Step 6: Preparing witness data...")
 
 	// Tạo witness với actual data từ transaction
-	witness := prepareWitness(txBytes, msgType, fromAddr, txBytesLen, msgTypeLen, fromAddrLen)
+	witness := prepareWitness(txBytes, msgType, fromAddr, amount, denom, txBytesLen, msgTypeLen, fromAddrLen, amountLen, denomLen)
 
 	fmt.Println("Witness prepared!")
 	fmt.Println()
@@ -139,8 +141,8 @@ func main() {
 }
 
 // prepareWitness tạo witness data từ transaction bytes
-func prepareWitness(txBytes []byte, msgType string, fromAddr string, txBytesLen, msgTypeLen, addrLen int) *txcircuit.TxDecodeCircuit {
-	witness := txcircuit.NewTxDecodeCircuit(txBytesLen, msgTypeLen, addrLen)
+func prepareWitness(txBytes []byte, msgType string, fromAddr string, amount string, denom string, txBytesLen, msgTypeLen, addrLen, amountLen, denomLen int) *txcircuit.TxDecodeCircuit {
+	witness := txcircuit.NewTxDecodeCircuit(txBytesLen, msgTypeLen, addrLen, amountLen, denomLen)
 
 	for i := 0; i < txBytesLen; i++ {
 		if i < len(txBytes) {
@@ -168,6 +170,12 @@ func prepareWitness(txBytes []byte, msgType string, fromAddr string, txBytesLen,
 
 	fromAddrBytes := []byte(fromAddr)
 	fillBytes(witness.ExpectedFrom, fromAddrBytes)
+
+	amountBytes := []byte(amount)
+	fillBytes(witness.ExpectedCoins.Amount, amountBytes)
+
+	denomBytes := []byte(denom)
+	fillBytes(witness.ExpectedCoins.Denom, denomBytes)
 
 	return witness
 }

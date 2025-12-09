@@ -33,7 +33,7 @@ func newAminoCodec() *codec.LegacyAmino {
 	return amino
 }
 
-func Encode() (txBytes []byte, msgType string, fromAddr string) {
+func Encode() (txBytes []byte, msgType string, fromAddr string, amountStr string, denom string) {
 	// ========================================
 	// PART 1: Tạo key, sinh địa chỉ và message
 	// ========================================
@@ -52,12 +52,15 @@ func Encode() (txBytes []byte, msgType string, fromAddr string) {
 	fmt.Printf("Receiver address: %s\n", toAddr)
 	fmt.Println()
 
+	amountInt := math.NewInt(1000000)
+	denom = "uatom"
+
 	// Tạo MsgSend
 	msg := &types.MsgSend{
 		FromAddress: fromAddr,
 		ToAddress:   toAddr,
 		Amount: sdk.NewCoins(
-			sdk.NewCoin("uatom", math.NewInt(1000000)), // 1 ATOM = 1,000,000 uatom
+			sdk.NewCoin(denom, amountInt), // 1 ATOM = 1,000,000 uatom
 		),
 	}
 
@@ -206,7 +209,7 @@ func Encode() (txBytes []byte, msgType string, fromAddr string) {
 	fmt.Printf("Size: %d bytes\n", len(txBytes))
 	fmt.Println()
 
-	return txBytes, anyMsg.TypeUrl, fromAddr
+	return txBytes, anyMsg.TypeUrl, fromAddr, amountInt.String(), denom
 }
 
 func Decode(txBytes []byte) {
