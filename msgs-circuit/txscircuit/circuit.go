@@ -71,13 +71,12 @@ func (circuit *TxsFieldCircuit) Define(api frontend.API) error {
 
 	api.AssertIsEqual(tx[0], 0x0a)
 
+	// Decode body length using up to 4 bytes varint
 	bodyLenIdx := frontend.Variable(1)
-	bodyLenLow, bodyLenMSB := decodeVarintByte(api, tx[1])
-	bodyLenHigh, bodyLenHighMSB := decodeVarintByte(api, tx[2])
-	api.AssertIsEqual(api.Mul(bodyLenMSB, bodyLenHighMSB), 0)
-	bodyLen := api.Add(bodyLenLow, api.Mul(bodyLenMSB, api.Mul(bodyLenHigh, frontend.Variable(128))))
+	bodyLen, bodyLenBytes := decodeVarint4Bytes(api, tx, bodyLenIdx, len(tx)-1)
 
-	bodyStart := api.Add(bodyLenIdx, api.Add(frontend.Variable(1), bodyLenMSB))
+	// bodyStart = 1 (tag) + bodyLenBytes
+	bodyStart := api.Add(frontend.Variable(1), bodyLenBytes)
 	bodyEnd := api.Add(bodyStart, bodyLen)
 	api.AssertIsLessOrEqual(bodyEnd, frontend.Variable(len(tx)))
 
@@ -108,18 +107,11 @@ func (circuit *TxsFieldCircuit) verifyMessage(
 	msgTag := selectByteAt(api, tx, msg.BodyOffset, maxIdx)
 	api.AssertIsEqual(msgTag, 0x0a)
 
+	// Decode message length using up to 4 bytes varint
 	lenIdx := api.Add(msg.BodyOffset, frontend.Variable(1))
-	lenByte := selectByteAt(api, tx, lenIdx, maxIdx)
-	lenLow, lenMSB := decodeVarintByte(api, lenByte)
+	msgLen, lenBytes := decodeVarint4Bytes(api, tx, lenIdx, maxIdx)
 
-	lenHighIdx := api.Add(lenIdx, frontend.Variable(1))
-	lenHighByte := selectByteAt(api, tx, lenHighIdx, maxIdx)
-	lenHigh, lenHighMSB := decodeVarintByte(api, lenHighByte)
-	api.AssertIsEqual(api.Mul(lenMSB, lenHighMSB), 0)
-
-	msgLen := api.Add(lenLow, api.Mul(lenMSB, api.Mul(lenHigh, frontend.Variable(128))))
-	lenBytes := api.Add(frontend.Variable(1), lenMSB)
-
+	// msgDataStart = BodyOffset + 1 (tag) + lenBytes
 	msgDataStart := api.Add(msg.BodyOffset, api.Add(frontend.Variable(1), lenBytes))
 	api.AssertIsLessOrEqual(api.Add(msgDataStart, msgLen), bodyEnd)
 
@@ -139,21 +131,14 @@ func (circuit *TxsFieldCircuit) verifyMessage(
 	valueTagIdx := api.Add(typeStart, frontend.Variable(len(msg.MsgType)))
 	api.AssertIsEqual(selectByteAt(api, tx, valueTagIdx, maxIdx), 0x12)
 
+	// Decode value length using up to 4 bytes varint
 	valueLenIdx := api.Add(valueTagIdx, frontend.Variable(1))
-	valueLenByte := selectByteAt(api, tx, valueLenIdx, maxIdx)
-	valueLenLow, valueMSB := decodeVarintByte(api, valueLenByte)
+	valueLen, valueBytes := decodeVarint4Bytes(api, tx, valueLenIdx, maxIdx)
 
-	valueHighIdx := api.Add(valueLenIdx, frontend.Variable(1))
-	valueHighByte := selectByteAt(api, tx, valueHighIdx, maxIdx)
-	valueLenHigh, valueHighMSB := decodeVarintByte(api, valueHighByte)
-	api.AssertIsEqual(api.Mul(valueMSB, valueHighMSB), 0)
-
-	valueLen := api.Add(valueLenLow, api.Mul(valueMSB, api.Mul(valueLenHigh, frontend.Variable(128))))
 	if cfg.MsgValueLen > 0 {
 		api.AssertIsEqual(valueLen, frontend.Variable(cfg.MsgValueLen))
 	}
 
-	valueBytes := api.Add(frontend.Variable(1), valueMSB)
 	valueStart := api.Add(valueLenIdx, valueBytes)
 
 	api.ToBinary(msg.FieldOffset, circuit.txIndexBits)
@@ -173,27 +158,20 @@ func (circuit *TxsFieldCircuit) verifyMessage(
 	)
 	api.AssertIsEqual(wireType, 2)
 
+	// Decode field length using up to 4 bytes varint
 	fieldLenIdx := api.Add(fieldStart, frontend.Variable(1))
-	fieldLenByte := selectByteAt(api, tx, fieldLenIdx, maxIdx)
-	fieldLenLow, fieldLenMSB := decodeVarintByte(api, fieldLenByte)
-
-	fieldLenHighIdx := api.Add(fieldLenIdx, frontend.Variable(1))
-	fieldLenHighByte := selectByteAt(api, tx, fieldLenHighIdx, maxIdx)
-	fieldLenHigh, fieldLenHighMSB := decodeVarintByte(api, fieldLenHighByte)
-	api.AssertIsEqual(api.Mul(fieldLenMSB, fieldLenHighMSB), 0)
-
-	fieldLen := api.Add(fieldLenLow, api.Mul(fieldLenMSB, api.Mul(fieldLenHigh, frontend.Variable(128))))
+	fieldLen, fieldBytes := decodeVarint4Bytes(api, tx, fieldLenIdx, maxIdx)
 	api.AssertIsEqual(fieldLen, frontend.Variable(len(msg.Field.Value)))
 
-	fieldBytes := api.Add(frontend.Variable(1), fieldLenMSB)
 	fieldValueStart := api.Add(fieldLenIdx, fieldBytes)
 	for j := 0; j < len(msg.Field.Value); j++ {
 		idx := api.Add(fieldValueStart, frontend.Variable(j))
 		api.AssertIsEqual(selectByteAt(api, tx, idx, maxIdx), msg.Field.Value[j])
 	}
 
+	// totalField = 1 (key) + fieldBytes + len(Value)
 	totalField := api.Add(
-		api.Add(frontend.Variable(2), fieldLenMSB),
+		api.Add(frontend.Variable(1), fieldBytes),
 		frontend.Variable(len(msg.Field.Value)),
 	)
 	api.AssertIsLessOrEqual(api.Add(msg.FieldOffset, totalField), valueLen)
@@ -206,6 +184,56 @@ func decodeVarintByte(api frontend.API, b frontend.Variable) (frontend.Variable,
 		value = api.Add(value, api.Mul(bits[i], frontend.Variable(1<<i)))
 	}
 	return value, bits[7]
+}
+
+// decodeVarint4Bytes decodes a varint with up to 4 bytes support
+// Returns: (decoded value, number of bytes used)
+// Max value: 2^28 - 1 = 268,435,455 (~256MB)
+func decodeVarint4Bytes(api frontend.API, tx []frontend.Variable, startIdx frontend.Variable, maxIdx int) (frontend.Variable, frontend.Variable) {
+	// Read 4 potential bytes
+	byte1 := selectByteAt(api, tx, startIdx, maxIdx)
+	byte2Idx := api.Add(startIdx, 1)
+	byte2 := selectByteAt(api, tx, byte2Idx, maxIdx)
+	byte3Idx := api.Add(startIdx, 2)
+	byte3 := selectByteAt(api, tx, byte3Idx, maxIdx)
+	byte4Idx := api.Add(startIdx, 3)
+	byte4 := selectByteAt(api, tx, byte4Idx, maxIdx)
+
+	// Decode each byte
+	val1, msb1 := decodeVarintByte(api, byte1)
+	val2, msb2 := decodeVarintByte(api, byte2)
+	val3, msb3 := decodeVarintByte(api, byte3)
+	val4, msb4 := decodeVarintByte(api, byte4)
+
+	// Chỉ khi 3 byte đầu đều bật bit tiếp tục (msb = 1) thì byte thứ 4
+	// mới thuộc cùng varint và cần có msb = 0. Nếu varint kết thúc
+	// sớm thì byte4 là dữ liệu field kế tiếp, không thể cưỡng bức msb4=0.
+	// Gating: msb1*msb2*msb3 == 1 → msb4 phải = 0.
+	api.AssertIsEqual(api.Mul(msb1, api.Mul(msb2, api.Mul(msb3, msb4))), 0)
+
+	// Calculate final value based on how many bytes are used
+	// value = val1 + (msb1 * val2 * 128) + (msb1 * msb2 * val3 * 128^2) + (msb1 * msb2 * msb3 * val4 * 128^3)
+
+	term1 := val1
+	term2 := api.Mul(msb1, api.Mul(val2, 128))
+	term3 := api.Mul(msb1, api.Mul(msb2, api.Mul(val3, 16384)))        // 128^2 = 16384
+	term4 := api.Mul(msb1, api.Mul(msb2, api.Mul(msb3, api.Mul(val4, 2097152)))) // 128^3 = 2097152
+
+	value := api.Add(term1, api.Add(term2, api.Add(term3, term4)))
+
+	// Calculate number of bytes used: 1 + msb1 + (msb1 * msb2) + (msb1 * msb2 * msb3)
+	bytesUsed := api.Add(
+		1,
+		api.Add(
+			msb1,
+			api.Add(
+				api.Mul(msb1, msb2),
+				api.Mul(msb1, api.Mul(msb2, msb3)),
+			),
+		),
+	)
+
+	return value, bytesUsed
 }
 
 func selectByteAt(api frontend.API, tx []frontend.Variable, idx frontend.Variable, maxIdx int) frontend.Variable {

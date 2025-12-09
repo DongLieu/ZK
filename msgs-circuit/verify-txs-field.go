@@ -45,7 +45,7 @@ func txs_field() {
 	msgSend := &banktypes.MsgSend{
 		FromAddress: fromAddr,
 		ToAddress:   toAddr,
-		Amount:      sdk.NewCoins(sdk.NewCoin("uatom", math.NewInt(1_000_000))),
+		Amount:      sdk.NewCoins(sdk.NewCoin("uatom", math.NewInt(4242))),
 	}
 
 	valKey := secp256k1.GenPrivKey()
