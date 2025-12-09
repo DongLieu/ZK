@@ -299,8 +299,8 @@ Với 1 message trong transaction 500 bytes:
 
 1. **Fixed-size arrays**: TxBytes và Field.Value phải có size cố định lúc compile
 2. **Linear complexity**: selectByteAt() có O(n) constraints cho mỗi lookup
-3. **No nested messages**: Chỉ verify 1 level của message structure
-4. **Limited varint**: Chỉ hỗ trợ varint 2 bytes (max value ~16K)
+3. **No nested messages**: Chỉ verify 1 level của message structure (ví dụ: Verify toàn bộ bytes của Coin, nhưng KHÔNG parse bên trong)
+4. **Limited varint**: Chỉ hỗ trợ varint 2 bytes (max value ~16K) (95%+ Cosmos transactions: OK. Ví dụ : MsgSubmitProposal MsgExecuteContract 16383 bytes > 16K)
 
 ### Cải tiến có thể làm
 
