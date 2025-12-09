@@ -2,3 +2,5 @@ bellman_demo/target
 
 # gen from ecip-gnark: `go run /Users/donglieu/1125/ecip-gnark/examples/ed25519_batch/main.go` -> move to gnark/store-ed25519-batch
 gnark/store-ed25519-batch
+
+msgs-circuit/.gocache

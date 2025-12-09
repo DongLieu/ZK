@@ -11,11 +11,11 @@ type CoinPublic struct {
 // TxDecodeCircuit chứng minh TxBytes chứa MsgSend với TypeURL, địa chỉ gửi
 // và coin khớp public input.
 type TxDecodeCircuit struct {
-	TxBytes         []frontend.Variable `gnark:",secret"`
-	PublicTxBytes   []frontend.Variable `gnark:",public"`
-	ExpectedMsgType []frontend.Variable `gnark:",public"`
-	ExpectedFrom    []frontend.Variable `gnark:",public"`
-	ExpectedCoins   CoinPublic
+	TxBytes       []frontend.Variable `gnark:",secret"`
+	PublicTxBytes []frontend.Variable `gnark:",public"`
+	MsgType       []frontend.Variable `gnark:",secret"`
+	ExpectedFrom  []frontend.Variable `gnark:",public"`
+	ExpectedCoins CoinPublic
 }
 
 // Define mô tả constraint dựa trên cấu trúc TxRaw do txcodec.Encode sinh ra.
@@ -46,15 +46,15 @@ func (circuit *TxDecodeCircuit) Define(api frontend.API) error {
 	typeTagIdx := bodyStart + 1 + bodyMsgLenVarintBytes
 	api.AssertIsEqual(tx[typeTagIdx], 0x0a)
 
-	// chiều dài TypeURL phải đúng với public input
-	typeLen := len(circuit.ExpectedMsgType)
+	// chiều dài TypeURL phải đúng với witness secret
+	typeLen := len(circuit.MsgType)
 	typeLenIdx := typeTagIdx + 1
 	api.AssertIsEqual(tx[typeLenIdx], typeLen)
 
 	// ràng buộc từng byte TypeURL
 	typeStart := typeLenIdx + 1
 	for i := 0; i < typeLen; i++ {
-		api.AssertIsEqual(tx[typeStart+i], circuit.ExpectedMsgType[i])
+		api.AssertIsEqual(tx[typeStart+i], circuit.MsgType[i])
 	}
 
 	// tag Any.Value và chiều dài
@@ -166,10 +166,10 @@ func decodeVarintByte(api frontend.API, b frontend.Variable) (frontend.Variable,
 // NewTxDecodeCircuit builds a circuit with the configured array lengths.
 func NewTxDecodeCircuit(txBytesLen, msgTypeLen, addrLen, amountLen, denomLen int) *TxDecodeCircuit {
 	return &TxDecodeCircuit{
-		TxBytes:         make([]frontend.Variable, txBytesLen),
-		PublicTxBytes:   make([]frontend.Variable, txBytesLen),
-		ExpectedMsgType: make([]frontend.Variable, msgTypeLen),
-		ExpectedFrom:    make([]frontend.Variable, addrLen),
+		TxBytes:       make([]frontend.Variable, txBytesLen),
+		PublicTxBytes: make([]frontend.Variable, txBytesLen),
+		MsgType:       make([]frontend.Variable, msgTypeLen),
+		ExpectedFrom:  make([]frontend.Variable, addrLen),
 		ExpectedCoins: CoinPublic{
 			Denom:  make([]frontend.Variable, denomLen),
 			Amount: make([]frontend.Variable, amountLen),

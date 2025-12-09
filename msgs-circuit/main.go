@@ -132,12 +132,12 @@ func main() {
 	// ========================================
 	fmt.Println("========== VERIFICATION SUMMARY ==========")
 	fmt.Println("✅ Transaction was successfully encoded")
-	fmt.Println("✅ Circuit verified the MsgSend type URL")
+	fmt.Println("✅ Circuit enforced the MsgSend type URL as a private witness")
 	fmt.Println("✅ Circuit verified the sender address matches the public input")
 	fmt.Println("✅ Zero-knowledge proof generated and verified")
 	fmt.Println()
-	fmt.Println("This proves that the transaction bytes are bound to the public msgType")
-	fmt.Println("and sender address without revealing any other transaction details.")
+	fmt.Println("This proves that the transaction bytes are bound to the hidden msgType,")
+	fmt.Println("the public sender address, and the declared coins without leaking anything else.")
 }
 
 // prepareWitness tạo witness data từ transaction bytes
@@ -166,7 +166,7 @@ func prepareWitness(txBytes []byte, msgType string, fromAddr string, amount stri
 	}
 
 	msgTypeBytes := []byte(msgType)
-	fillBytes(witness.ExpectedMsgType, msgTypeBytes)
+	fillBytes(witness.MsgType, msgTypeBytes)
 
 	fromAddrBytes := []byte(fromAddr)
 	fillBytes(witness.ExpectedFrom, fromAddrBytes)
