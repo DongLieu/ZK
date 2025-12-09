@@ -23,14 +23,14 @@ import (
 )
 
 type msgSpec struct {
-	fieldKey byte
+	fieldKey byte // protobuf tag (field_number<<3 | wire_type) của field length-delimited cần chứng minh
 	buildAny func(protoCodec *codec.ProtoCodec, fromAddr string) (*codectypes.Any, error)
 }
 
 // go test -run TestTxsFieldCircuit_MultiMessages -timeout 90s
 func TestTxsFieldCircuit_MultiMessages(t *testing.T) {
 	sendSpec := msgSpec{
-		fieldKey: byte((3 << 3) | 2),
+		fieldKey: byte((3 << 3) | 2), // field 3 (amount) với wire-type length-delimited
 		buildAny: func(protoCodec *codec.ProtoCodec, fromAddr string) (*codectypes.Any, error) {
 			toAddr := sdk.AccAddress(secp256k1.GenPrivKey().PubKey().Address()).String()
 			msg := &banktypes.MsgSend{
@@ -42,7 +42,7 @@ func TestTxsFieldCircuit_MultiMessages(t *testing.T) {
 		},
 	}
 	delegateSpec := msgSpec{
-		fieldKey: byte((1 << 3) | 2),
+		fieldKey: byte((1 << 3) | 2), // field 1 (delegator_address) wire-type 2
 		buildAny: func(protoCodec *codec.ProtoCodec, fromAddr string) (*codectypes.Any, error) {
 			valKey := secp256k1.GenPrivKey()
 			valAddr := sdk.ValAddress(valKey.PubKey().Address()).String()
@@ -55,7 +55,7 @@ func TestTxsFieldCircuit_MultiMessages(t *testing.T) {
 		},
 	}
 	fundSpec := msgSpec{
-		fieldKey: byte((1 << 3) | 2),
+		fieldKey: byte((1 << 3) | 2), // field 1 (depositor) wire-type 2
 		buildAny: func(_ *codec.ProtoCodec, fromAddr string) (*codectypes.Any, error) {
 			value, err := marshalFundCommunityPool(fromAddr, paddedCommunityPoolCoins())
 			if err != nil {
@@ -70,7 +70,7 @@ func TestTxsFieldCircuit_MultiMessages(t *testing.T) {
 
 	cases := []struct {
 		name     string
-		msgSpecs []msgSpec
+		msgSpecs []msgSpec // thứ tự trong slice chính là thứ tự messages sẽ xuất hiện trong TxBody
 	}{
 		{
 			name:     "MsgSend+MsgDelegate",
