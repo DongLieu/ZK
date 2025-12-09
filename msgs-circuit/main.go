@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 
 	txcircuit "github.com/DongLieu/msg-circuit/txcircuit"
@@ -13,22 +14,39 @@ import (
 )
 
 func main() {
-	fmt.Println("========== ZK PROOF FOR TX DECODE VERIFICATION ==========")
+	fmt.Println("========== ZK PROOF FOR TX FIELD VERIFICATION ==========")
 	fmt.Println()
 
 	// ========================================
 	// STEP 1: Tạo transaction từ Encode()
 	// ========================================
 	fmt.Println("Step 1: Creating transaction using Encode()...")
-	txBytes, msgType, fromAddr, amount, denom := txcodec.Encode()
+	txBytes, msgType, fromAddr, _, _ := txcodec.Encode()
 	fmt.Printf("Transaction created: %d bytes\n", len(txBytes))
 	fmt.Println()
 
 	// ========================================
-	// STEP 2: Decode để lấy thông tin cần verify
+	// STEP 2: Decode (log) và lấy thông tin field target
 	// ========================================
-	fmt.Println("Step 2: Decoding transaction to extract message info...")
+	fmt.Println("Step 2: Decoding transaction to inspect message info...")
 	txcodec.Decode(txBytes)
+
+	anyMsg, err := txcodec.ExtractFirstMessage(txBytes)
+	if err != nil {
+		panic(fmt.Errorf("failed to extract first message: %w", err))
+	}
+
+	fieldKey := byte(0x0a) // ví dụ: field number 1 (from_address) với wire-type 2
+	fieldValue := []byte(fromAddr)
+
+	fieldOffset, err := findFieldOffset(anyMsg.Value, fieldKey, fieldValue)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Target field info:")
+	fmt.Printf("  TypeURL: %s\n", anyMsg.TypeUrl)
+	fmt.Printf("  Field key: 0x%x | value length: %d bytes | offset: %d\n", fieldKey, len(fieldValue), fieldOffset)
 	fmt.Println()
 
 	// ========================================
@@ -38,11 +56,10 @@ func main() {
 
 	txBytesLen := len(txBytes)
 	msgTypeLen := len(msgType)
-	fromAddrLen := len(fromAddr)
-	amountLen := len(amount)
-	denomLen := len(denom)
+	fieldValueLen := len(fieldValue)
+	msgValueLen := len(anyMsg.Value)
 
-	circuit := txcircuit.NewTxDecodeCircuit(txBytesLen, msgTypeLen, fromAddrLen, amountLen, denomLen)
+	circuit := txcircuit.NewTxFieldCircuit(txBytesLen, msgTypeLen, fieldValueLen, msgValueLen)
 
 	fmt.Printf("Circuit created with TxBytes size: %d\n", txBytesLen)
 	fmt.Println()
@@ -81,8 +98,17 @@ func main() {
 	// ========================================
 	fmt.Println("Step 6: Preparing witness data...")
 
-	// Tạo witness với actual data từ transaction
-	witness := prepareWitness(txBytes, msgType, fromAddr, amount, denom, txBytesLen, msgTypeLen, fromAddrLen, amountLen, denomLen)
+	witness := prepareWitness(
+		txBytes,
+		msgType,
+		fieldKey,
+		fieldValue,
+		fieldOffset,
+		txBytesLen,
+		msgTypeLen,
+		fieldValueLen,
+		msgValueLen,
+	)
 
 	fmt.Println("Witness prepared!")
 	fmt.Println()
@@ -132,17 +158,25 @@ func main() {
 	// ========================================
 	fmt.Println("========== VERIFICATION SUMMARY ==========")
 	fmt.Println("✅ Transaction was successfully encoded")
-	fmt.Println("✅ Circuit enforced the MsgSend type URL as a private witness")
-	fmt.Println("✅ Circuit verified the sender address matches the public input")
+	fmt.Println("✅ Circuit keeps the Msg TypeURL secret")
+	fmt.Println("✅ Circuit proved the tx encodes the chosen public field (key/value)")
 	fmt.Println("✅ Zero-knowledge proof generated and verified")
 	fmt.Println()
-	fmt.Println("This proves that the transaction bytes are bound to the hidden msgType,")
-	fmt.Println("the public sender address, and the declared coins without leaking anything else.")
+	fmt.Println("This binds the hidden msgType to any Cosmos field you expose publicly (depositor, delegator, amount, ...).")
 }
 
-// prepareWitness tạo witness data từ transaction bytes
-func prepareWitness(txBytes []byte, msgType string, fromAddr string, amount string, denom string, txBytesLen, msgTypeLen, addrLen, amountLen, denomLen int) *txcircuit.TxDecodeCircuit {
-	witness := txcircuit.NewTxDecodeCircuit(txBytesLen, msgTypeLen, addrLen, amountLen, denomLen)
+func prepareWitness(
+	txBytes []byte,
+	msgType string,
+	fieldKey byte,
+	fieldValue []byte,
+	fieldOffset int,
+	txBytesLen,
+	msgTypeLen,
+	fieldValueLen,
+	msgValueLen int,
+) *txcircuit.TxFieldCircuit {
+	witness := txcircuit.NewTxFieldCircuit(txBytesLen, msgTypeLen, fieldValueLen, msgValueLen)
 
 	for i := 0; i < txBytesLen; i++ {
 		if i < len(txBytes) {
@@ -165,17 +199,43 @@ func prepareWitness(txBytes []byte, msgType string, fromAddr string, amount stri
 		}
 	}
 
-	msgTypeBytes := []byte(msgType)
-	fillBytes(witness.MsgType, msgTypeBytes)
+	fillBytes(witness.MsgType, []byte(msgType))
+	fillBytes(witness.Field.Value, fieldValue)
 
-	fromAddrBytes := []byte(fromAddr)
-	fillBytes(witness.ExpectedFrom, fromAddrBytes)
-
-	amountBytes := []byte(amount)
-	fillBytes(witness.ExpectedCoins.Amount, amountBytes)
-
-	denomBytes := []byte(denom)
-	fillBytes(witness.ExpectedCoins.Denom, denomBytes)
+	witness.Field.Key = int(fieldKey)
+	witness.FieldOffset = fieldOffset
 
 	return witness
+}
+
+func findFieldOffset(msgValue []byte, fieldKey byte, fieldValue []byte) (int, error) {
+	needle := []byte{fieldKey}
+	needle = append(needle, encodeVarint(len(fieldValue))...)
+	needle = append(needle, fieldValue...)
+
+	offset := bytes.Index(msgValue, needle)
+	if offset < 0 {
+		return 0, fmt.Errorf("field key 0x%x with provided value not found in message", fieldKey)
+	}
+
+	return offset, nil
+}
+
+func encodeVarint(length int) []byte {
+	if length == 0 {
+		return []byte{0}
+	}
+
+	var out []byte
+	value := length
+	for value > 0 {
+		b := byte(value & 0x7f)
+		value >>= 7
+		if value > 0 {
+			b |= 0x80
+		}
+		out = append(out, b)
+	}
+
+	return out
 }

@@ -5,6 +5,7 @@ go 1.25.4
 require (
 	cosmossdk.io/math v1.4.0
 	cosmossdk.io/x/bank v0.2.0-rc.1
+	cosmossdk.io/x/staking v0.0.0-20241218110910-47409028a73d
 	github.com/consensys/gnark v0.14.0
 	github.com/consensys/gnark-crypto v0.19.0
 	github.com/cosmos/cosmos-sdk v0.52.0

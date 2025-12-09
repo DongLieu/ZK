@@ -277,3 +277,24 @@ func Decode(txBytes []byte) {
 		fmt.Printf("Signature #%d (base64): %s\n", i+1, base64.StdEncoding.EncodeToString(sig))
 	}
 }
+
+// ExtractFirstMessage trả về message đầu tiên (đã wrap Any) từ TxBytes.
+func ExtractFirstMessage(txBytes []byte) (*codectypes.Any, error) {
+	protoCodec := newProtoCodec()
+
+	var txRaw txtypes.TxRaw
+	if err := protoCodec.Unmarshal(txBytes, &txRaw); err != nil {
+		return nil, err
+	}
+
+	var txBody txtypes.TxBody
+	if err := protoCodec.Unmarshal(txRaw.BodyBytes, &txBody); err != nil {
+		return nil, err
+	}
+
+	if len(txBody.Messages) == 0 {
+		return nil, fmt.Errorf("tx body has no messages")
+	}
+
+	return txBody.Messages[0], nil
+}
