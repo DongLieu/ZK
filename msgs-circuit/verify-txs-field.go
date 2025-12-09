@@ -1,5 +1,380 @@
 package main
 
-func txs_field() {
+import (
+	"fmt"
+	"strings"
 
+	txscircuit "github.com/DongLieu/msg-circuit/txscircuit"
+
+	"cosmossdk.io/math"
+	banktypes "cosmossdk.io/x/bank/types"
+	stakingtypes "cosmossdk.io/x/staking/types"
+
+	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/std"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
+	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
+	"github.com/cosmos/gogoproto/proto"
+)
+
+type txsFieldAssertion struct {
+	TypeURL     string
+	FieldKey    byte
+	FieldValue  []byte
+	FieldOffset int
+	BodyOffset  int
+}
+
+func txs_field() {
+	fmt.Println("========== ZK PROOF FOR MULTI-MSG FIELD VERIFICATION ==========")
+	fmt.Println()
+
+	protoCodec := newBenchmarkProtoCodec()
+
+	privKey := secp256k1.GenPrivKey()
+	fromAddr := sdk.AccAddress(privKey.PubKey().Address()).String()
+	toAddr := sdk.AccAddress(secp256k1.GenPrivKey().PubKey().Address()).String()
+
+	msgSend := &banktypes.MsgSend{
+		FromAddress: fromAddr,
+		ToAddress:   toAddr,
+		Amount:      sdk.NewCoins(sdk.NewCoin("uatom", math.NewInt(1_000_000))),
+	}
+
+	valKey := secp256k1.GenPrivKey()
+	valAddr := sdk.ValAddress(valKey.PubKey().Address()).String()
+	msgDelegate := &stakingtypes.MsgDelegate{
+		DelegatorAddress: fromAddr,
+		ValidatorAddress: valAddr,
+		Amount:           sdk.NewCoin("stake", math.NewInt(777)),
+	}
+
+	sendAny, err := codectypes.NewAnyWithValue(msgSend)
+	if err != nil {
+		panic(fmt.Errorf("wrap send: %w", err))
+	}
+
+	delegateAny, err := codectypes.NewAnyWithValue(msgDelegate)
+	if err != nil {
+		panic(fmt.Errorf("wrap delegate: %w", err))
+	}
+
+	txBytes := buildTxWithMessagesDemo(
+		protoCodec,
+		privKey,
+		[]*codectypes.Any{sendAny, delegateAny},
+	)
+	fmt.Printf("Transaction created with %d bytes and %d messages\n", len(txBytes), len([]*codectypes.Any{sendAny, delegateAny}))
+	fmt.Println()
+
+	offsets, err := locateMessageOffsetsDemo(txBytes, len([]*codectypes.Any{sendAny, delegateAny}))
+	if err != nil {
+		panic(fmt.Errorf("locate offsets: %w", err))
+	}
+
+	sendFieldKey := byte((3 << 3) | 2)
+	sendFieldValue, err := extractFieldValueDemo(sendAny.Value, sendFieldKey)
+	if err != nil {
+		panic(err)
+	}
+	sendFieldOffset, err := findFieldOffset(sendAny.Value, sendFieldKey, sendFieldValue)
+	if err != nil {
+		panic(err)
+	}
+
+	delegateFieldKey := byte((1 << 3) | 2)
+	delegateFieldValue, err := extractFieldValueDemo(delegateAny.Value, delegateFieldKey)
+	if err != nil {
+		panic(err)
+	}
+	delegateFieldOffset, err := findFieldOffset(delegateAny.Value, delegateFieldKey, delegateFieldValue)
+	if err != nil {
+		panic(err)
+	}
+
+	assertions := []txsFieldAssertion{
+		{
+			TypeURL:     sendAny.TypeUrl,
+			FieldKey:    sendFieldKey,
+			FieldValue:  sendFieldValue,
+			FieldOffset: sendFieldOffset,
+			BodyOffset:  offsets[0],
+		},
+		{
+			TypeURL:     delegateAny.TypeUrl,
+			FieldKey:    delegateFieldKey,
+			FieldValue:  delegateFieldValue,
+			FieldOffset: delegateFieldOffset,
+			BodyOffset:  offsets[1],
+		},
+	}
+
+	configs := []txscircuit.MsgConfig{
+		{
+			MsgTypeLen:    len(sendAny.TypeUrl),
+			FieldValueLen: len(sendFieldValue),
+			MsgValueLen:   len(sendAny.Value),
+		},
+		{
+			MsgTypeLen:    len(delegateAny.TypeUrl),
+			FieldValueLen: len(delegateFieldValue),
+			MsgValueLen:   len(delegateAny.Value),
+		},
+	}
+
+	circuit := txscircuit.NewTxsFieldCircuit(len(txBytes), configs)
+
+	fmt.Println("Compiling TxsFieldCircuit...")
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
+	if err != nil {
+		panic(fmt.Errorf("compile circuit: %w", err))
+	}
+	fmt.Printf("Circuit compiled, constraints: %d\n\n", ccs.GetNbConstraints())
+
+	fmt.Println("Running Groth16 setup...")
+	pk, vk, err := groth16.Setup(ccs)
+	if err != nil {
+		panic(fmt.Errorf("setup: %w", err))
+	}
+	fmt.Println("Setup done!")
+
+	fmt.Println("Preparing witness...")
+	witness := prepareTxsWitness(txBytes, assertions, configs)
+	fmt.Println("Witness ready!")
+
+	fmt.Println("Generating proof...")
+	fullWitness, err := frontend.NewWitness(witness, ecc.BN254.ScalarField())
+	if err != nil {
+		panic(fmt.Errorf("full witness: %w", err))
+	}
+	proof, err := groth16.Prove(ccs, pk, fullWitness)
+	if err != nil {
+		panic(fmt.Errorf("prove: %w", err))
+	}
+	fmt.Println("Proof generated!")
+
+	fmt.Println("Verifying proof...")
+	publicWitness, err := fullWitness.Public()
+	if err != nil {
+		panic(fmt.Errorf("public witness: %w", err))
+	}
+	if err := groth16.Verify(proof, vk, publicWitness); err != nil {
+		panic(fmt.Errorf("verify: %w", err))
+	}
+	fmt.Println("✅ Proof verification SUCCEEDED!")
+}
+
+func newBenchmarkProtoCodec() *codec.ProtoCodec {
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	std.RegisterInterfaces(interfaceRegistry)
+	banktypes.RegisterInterfaces(interfaceRegistry)
+	stakingtypes.RegisterInterfaces(interfaceRegistry)
+	return codec.NewProtoCodec(interfaceRegistry)
+}
+
+func buildTxWithMessagesDemo(
+	protoCodec *codec.ProtoCodec,
+	privKey *secp256k1.PrivKey,
+	anyMsgs []*codectypes.Any,
+) []byte {
+	txBody := &txtypes.TxBody{
+		Messages: anyMsgs,
+		Memo:     strings.Repeat("txs-field-demo-", 10),
+	}
+
+	txBodyBytes, err := protoCodec.Marshal(txBody)
+	if err != nil {
+		panic(fmt.Errorf("marshal body: %w", err))
+	}
+
+	pubKeyAny, err := codectypes.NewAnyWithValue(privKey.PubKey())
+	if err != nil {
+		panic(fmt.Errorf("wrap pubkey: %w", err))
+	}
+
+	authInfo := &txtypes.AuthInfo{
+		SignerInfos: []*txtypes.SignerInfo{
+			{
+				PublicKey: pubKeyAny,
+				ModeInfo: &txtypes.ModeInfo{
+					Sum: &txtypes.ModeInfo_Single_{
+						Single: &txtypes.ModeInfo_Single{Mode: signingtypes.SignMode_SIGN_MODE_DIRECT},
+					},
+				},
+				Sequence: 0,
+			},
+		},
+		Fee: &txtypes.Fee{
+			Amount:   sdk.NewCoins(sdk.NewCoin("uatom", math.NewInt(5000))),
+			GasLimit: 300000,
+		},
+	}
+
+	authInfoBytes, err := protoCodec.Marshal(authInfo)
+	if err != nil {
+		panic(fmt.Errorf("marshal auth info: %w", err))
+	}
+
+	signDoc := &txtypes.SignDoc{
+		BodyBytes:     txBodyBytes,
+		AuthInfoBytes: authInfoBytes,
+		ChainId:       "txs-field-demo",
+		AccountNumber: 0,
+	}
+
+	signDocBytes, err := proto.Marshal(signDoc)
+	if err != nil {
+		panic(fmt.Errorf("marshal sign doc: %w", err))
+	}
+
+	signature, err := privKey.Sign(signDocBytes)
+	if err != nil {
+		panic(fmt.Errorf("sign: %w", err))
+	}
+
+	txRaw := &txtypes.TxRaw{
+		BodyBytes:     txBodyBytes,
+		AuthInfoBytes: authInfoBytes,
+		Signatures:    [][]byte{signature},
+	}
+
+	txBytes, err := protoCodec.Marshal(txRaw)
+	if err != nil {
+		panic(fmt.Errorf("marshal tx: %w", err))
+	}
+
+	return txBytes
+}
+
+func locateMessageOffsetsDemo(txBytes []byte, expected int) ([]int, error) {
+	if len(txBytes) < 3 {
+		return nil, fmt.Errorf("tx too short")
+	}
+	if txBytes[0] != 0x0a {
+		return nil, fmt.Errorf("invalid body tag")
+	}
+
+	bodyLen, consumed, err := decodeVarintDemo(txBytes[1:])
+	if err != nil {
+		return nil, err
+	}
+
+	bodyStart := 1 + consumed
+	if bodyStart+bodyLen > len(txBytes) {
+		return nil, fmt.Errorf("body overflow")
+	}
+
+	offsets := make([]int, 0, expected)
+	cursor := bodyStart
+	limit := bodyStart + bodyLen
+	for cursor < limit && len(offsets) < expected {
+		if txBytes[cursor] != 0x0a {
+			return nil, fmt.Errorf("unexpected tag at %d", cursor)
+		}
+		offsets = append(offsets, cursor)
+		cursor++
+
+		msgLen, consumed, err := decodeVarintDemo(txBytes[cursor:])
+		if err != nil {
+			return nil, err
+		}
+		cursor += consumed + msgLen
+	}
+
+	if len(offsets) != expected {
+		return nil, fmt.Errorf("expected %d msgs, found %d", expected, len(offsets))
+	}
+
+	return offsets, nil
+}
+
+func decodeVarintDemo(data []byte) (int, int, error) {
+	var value int
+	var shift uint
+	var i int
+	for i = 0; i < len(data); i++ {
+		b := data[i]
+		value |= int(b&0x7f) << shift
+		if b&0x80 == 0 {
+			return value, i + 1, nil
+		}
+		shift += 7
+		if shift > 28 {
+			return 0, 0, fmt.Errorf("varint too long")
+		}
+	}
+	return 0, 0, fmt.Errorf("incomplete varint")
+}
+
+func extractFieldValueDemo(msgValue []byte, fieldKey byte) ([]byte, error) {
+	for idx := 0; idx < len(msgValue); {
+		key := msgValue[idx]
+		idx++
+
+		length, consumed, err := decodeVarintDemo(msgValue[idx:])
+		if err != nil {
+			return nil, fmt.Errorf("decode length: %w", err)
+		}
+		idx += consumed
+
+		if idx+length > len(msgValue) {
+			return nil, fmt.Errorf("field overruns message")
+		}
+
+		value := msgValue[idx : idx+length]
+		if key == fieldKey {
+			buf := make([]byte, len(value))
+			copy(buf, value)
+			return buf, nil
+		}
+
+		idx += length
+	}
+
+	return nil, fmt.Errorf("field 0x%x not found", fieldKey)
+}
+
+func prepareTxsWitness(
+	txBytes []byte,
+	assertions []txsFieldAssertion,
+	configs []txscircuit.MsgConfig,
+) *txscircuit.TxsFieldCircuit {
+	witness := txscircuit.NewTxsFieldCircuit(len(txBytes), configs)
+
+	for i := range witness.TxBytes {
+		if i < len(txBytes) {
+			witness.TxBytes[i] = int(txBytes[i])
+			witness.PublicTxBytes[i] = int(txBytes[i])
+		} else {
+			witness.TxBytes[i] = 0
+			witness.PublicTxBytes[i] = 0
+		}
+	}
+
+	for i, assertion := range assertions {
+		copyBytes := func(dst []frontend.Variable, data []byte) {
+			for j := range dst {
+				if j < len(data) {
+					dst[j] = int(data[j])
+				} else {
+					dst[j] = 0
+				}
+			}
+		}
+		copyBytes(witness.Msgs[i].MsgType, []byte(assertion.TypeURL))
+		copyBytes(witness.Msgs[i].Field.Value, assertion.FieldValue)
+
+		witness.Msgs[i].Field.Key = int(assertion.FieldKey)
+		witness.Msgs[i].FieldOffset = assertion.FieldOffset
+		witness.Msgs[i].BodyOffset = assertion.BodyOffset
+	}
+
+	return witness
 }

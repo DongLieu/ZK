@@ -190,7 +190,7 @@ func fillTxsAssignment(
 }
 
 func buildTxWithMessages(
-	t testing.TB,
+	t *testing.T,
 	protoCodec *codec.ProtoCodec,
 	privKey *secp256k1.PrivKey,
 	anyMsgs []*codectypes.Any,
