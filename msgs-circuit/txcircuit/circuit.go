@@ -15,8 +15,6 @@ type TxDecodeCircuit struct {
 const (
 	txRawBodyLenVarintBytes = 2
 	bodyMsgLenVarintBytes   = 2
-	anyValueLenVarintBytes  = 1
-	expectedValueLen        = 0x70
 )
 
 func (circuit *TxDecodeCircuit) Define(api frontend.API) error {
@@ -57,27 +55,47 @@ func (circuit *TxDecodeCircuit) Define(api frontend.API) error {
 	api.AssertIsEqual(tx[valueTagIdx], 0x12)
 
 	valueLenIdx := valueTagIdx + 1
-	api.AssertIsEqual(tx[valueLenIdx], expectedValueLen)
+	valueLen, firstMSB := decodeVarintByte(api, tx[valueLenIdx])
+	highLen, highMSB := decodeVarintByte(api, tx[valueLenIdx+1])
+	api.AssertIsEqual(highMSB, 0)
 
-	valueStart := valueLenIdx + anyValueLenVarintBytes
+	valueLen = api.Add(valueLen, api.Mul(firstMSB, api.Mul(highLen, frontend.Variable(128))))
+	api.AssertIsLessOrEqual(frontend.Variable(len(circuit.ExpectedFrom)+2), valueLen)
+
+	valueStartOne := valueLenIdx + 1
+	valueStartTwo := valueLenIdx + 2
 
 	// MsgSend field 1: FromAddress
-	api.AssertIsEqual(tx[valueStart], 0x0a)
+	api.AssertIsEqual(api.Select(firstMSB, tx[valueStartTwo], tx[valueStartOne]), 0x0a)
 
 	fromLen := len(circuit.ExpectedFrom)
-	api.AssertIsEqual(tx[valueStart+1], fromLen)
+	api.AssertIsEqual(api.Select(firstMSB, tx[valueStartTwo+1], tx[valueStartOne+1]), fromLen)
 
 	// so khớp từng byte của địa chỉ gửi
-	fromStart := valueStart + 2
+	fromStartOne := valueStartOne + 2
+	fromStartTwo := valueStartTwo + 2
 	for i := 0; i < fromLen; i++ {
-		api.AssertIsEqual(tx[fromStart+i], circuit.ExpectedFrom[i])
+		api.AssertIsEqual(
+			api.Select(firstMSB, tx[fromStartTwo+i], tx[fromStartOne+i]),
+			circuit.ExpectedFrom[i],
+		)
 	}
 
 	// kiểm tra tag field 2 (ToAddress) nằm sau phần FromAddress
-	toTagIdx := fromStart + fromLen
-	api.AssertIsEqual(tx[toTagIdx], 0x12)
+	toTagIdxOne := fromStartOne + fromLen
+	toTagIdxTwo := fromStartTwo + fromLen
+	api.AssertIsEqual(api.Select(firstMSB, tx[toTagIdxTwo], tx[toTagIdxOne]), 0x12)
 
 	return nil
+}
+
+func decodeVarintByte(api frontend.API, b frontend.Variable) (frontend.Variable, frontend.Variable) {
+	bits := api.ToBinary(b, 8)
+	value := frontend.Variable(0)
+	for i := 0; i < 7; i++ {
+		value = api.Add(value, api.Mul(bits[i], frontend.Variable(1<<i)))
+	}
+	return value, bits[7]
 }
 
 // NewTxDecodeCircuit builds a circuit with the configured array lengths.
