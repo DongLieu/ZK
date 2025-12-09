@@ -52,8 +52,8 @@ func Encode() (txBytes []byte, msgType string, fromAddr string, amountStr string
 	fmt.Printf("Receiver address: %s\n", toAddr)
 	fmt.Println()
 
-	amountInt := math.NewInt(1000000)
-	denom = "uatom"
+	amountInt := math.NewInt(100000000000)
+	denom = "uosmo"
 
 	// Tạo MsgSend
 	msg := &types.MsgSend{
