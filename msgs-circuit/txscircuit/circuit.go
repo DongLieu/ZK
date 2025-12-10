@@ -80,16 +80,14 @@ func (circuit *TxsFieldCircuit) Define(api frontend.API) error {
 	bodyEnd := api.Add(bodyStart, bodyLen)
 	api.AssertIsLessOrEqual(bodyEnd, frontend.Variable(len(tx)))
 
-	prevOffset := bodyStart
+	cursor := bodyStart
 	for i, msg := range circuit.Msgs {
 		api.ToBinary(msg.BodyOffset, circuit.txIndexBits)
-		api.AssertIsLessOrEqual(prevOffset, msg.BodyOffset)
-		api.AssertIsLessOrEqual(msg.BodyOffset, api.Sub(bodyEnd, frontend.Variable(1)))
-
-		circuit.verifyMessage(api, tx, msg, circuit.msgConfigs[i], bodyStart, bodyEnd)
-
-		prevOffset = api.Add(msg.BodyOffset, frontend.Variable(1))
+		api.AssertIsEqual(msg.BodyOffset, cursor)
+		cursor = circuit.verifyMessage(api, tx, msg, circuit.msgConfigs[i], bodyEnd)
 	}
+
+	api.AssertIsLessOrEqual(cursor, bodyEnd)
 
 	return nil
 }
@@ -99,9 +97,8 @@ func (circuit *TxsFieldCircuit) verifyMessage(
 	tx []frontend.Variable,
 	msg MsgAssertion,
 	cfg MsgConfig,
-	bodyStart frontend.Variable,
 	bodyEnd frontend.Variable,
-) {
+) frontend.Variable {
 	maxIdx := len(tx) - 1
 
 	msgTag := selectByteAt(api, tx, msg.BodyOffset, maxIdx)
@@ -175,6 +172,16 @@ func (circuit *TxsFieldCircuit) verifyMessage(
 		frontend.Variable(len(msg.Field.Value)),
 	)
 	api.AssertIsLessOrEqual(api.Add(msg.FieldOffset, totalField), valueLen)
+
+	entryEnd := api.Add(
+		msg.BodyOffset,
+		api.Add(
+			frontend.Variable(1),
+			api.Add(lenBytes, msgLen),
+		),
+	)
+
+	return entryEnd
 }
 
 func decodeVarintByte(api frontend.API, b frontend.Variable) (frontend.Variable, frontend.Variable) {
@@ -216,7 +223,7 @@ func decodeVarint4Bytes(api frontend.API, tx []frontend.Variable, startIdx front
 
 	term1 := val1
 	term2 := api.Mul(msb1, api.Mul(val2, 128))
-	term3 := api.Mul(msb1, api.Mul(msb2, api.Mul(val3, 16384)))        // 128^2 = 16384
+	term3 := api.Mul(msb1, api.Mul(msb2, api.Mul(val3, 16384)))                  // 128^2 = 16384
 	term4 := api.Mul(msb1, api.Mul(msb2, api.Mul(msb3, api.Mul(val4, 2097152)))) // 128^3 = 2097152
 
 	value := api.Add(term1, api.Add(term2, api.Add(term3, term4)))
