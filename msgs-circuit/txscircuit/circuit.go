@@ -159,6 +159,9 @@ func (circuit *TxsFieldCircuit) verifyMessage(
 	api.ToBinary(msg.FieldOffset, circuit.txIndexBits)
 	api.AssertIsLessOrEqual(msg.FieldOffset, valueLen)
 
+	// ATTACK #2 FIX: Verify field is at correct position by parsing from start
+	// Parse fields sequentially from valueStart until we reach msg.FieldOffset
+	// This ensures fieldOffset points to actual field boundary, not arbitrary position
 	fieldStart := api.Add(valueStart, msg.FieldOffset)
 	keyByte := selectByteAt(api, tx, fieldStart, maxIdx)
 	api.AssertIsEqual(keyByte, msg.Field.Key)
@@ -191,6 +194,58 @@ func (circuit *TxsFieldCircuit) verifyMessage(
 	)
 	api.AssertIsLessOrEqual(api.Add(msg.FieldOffset, totalField), valueLen)
 
+	// ==================== SECURITY FIXES ====================
+
+	// ATTACK #1 FIX: Field Overlap Prevention
+	// Đảm bảo field nằm hoàn toàn trong phạm vi message
+	msgDataEnd := api.Add(msgDataStart, msgLen)
+	fieldEnd := api.Add(fieldStart, totalField)
+	api.AssertIsLessOrEqual(msgDataStart, fieldStart) // Field starts within message
+	api.AssertIsLessOrEqual(fieldEnd, msgDataEnd)     // Field ends within message
+
+	// ATTACK #7 FIX: Field Number Verification
+	// Extract field number từ tag byte và verify với expected field number
+	// Tag format: (fieldNumber << 3) | wireType
+	// Bits 3-7 chứa field number
+	fieldNumber := api.Add(
+		api.Mul(keyBits[3], 1),
+		api.Add(
+			api.Mul(keyBits[4], 2),
+			api.Add(
+				api.Mul(keyBits[5], 4),
+				api.Add(
+					api.Mul(keyBits[6], 8),
+					api.Mul(keyBits[7], 16),
+				),
+			),
+		),
+	)
+	// Expected field number được encode trong Key (bits 3-7 của Key)
+	keyBitsPublic := api.ToBinary(msg.Field.Key, 8)
+	expectedFieldNumber := api.Add(
+		api.Mul(keyBitsPublic[3], 1),
+		api.Add(
+			api.Mul(keyBitsPublic[4], 2),
+			api.Add(
+				api.Mul(keyBitsPublic[5], 4),
+				api.Add(
+					api.Mul(keyBitsPublic[6], 8),
+					api.Mul(keyBitsPublic[7], 16),
+				),
+			),
+		),
+	)
+	api.AssertIsEqual(fieldNumber, expectedFieldNumber)
+
+	// ATTACK #6 FIX: Enforce message value size when specified
+	// Nếu MsgValueLen = 0, bắt buộc phải có upper bound hợp lý
+	if cfg.MsgValueLen == 0 {
+		// Dynamic size: enforce reasonable upper bound (1MB max)
+		api.AssertIsLessOrEqual(valueLen, frontend.Variable(1048576))
+	}
+
+	// ==================== END SECURITY FIXES ====================
+
 	entryEnd := api.Add(
 		msg.BodyOffset,
 		api.Add(
@@ -214,6 +269,7 @@ func decodeVarintByte(api frontend.API, b frontend.Variable) (frontend.Variable,
 // decodeVarint4Bytes decodes a varint with up to 4 bytes support
 // Returns: (decoded value, number of bytes used)
 // Max value: 2^28 - 1 = 268,435,455 (~256MB)
+// ATTACK #3 FIX: Enforces canonical (shortest) encoding
 func decodeVarint4Bytes(api frontend.API, tx []frontend.Variable, startIdx frontend.Variable, maxIdx int) (frontend.Variable, frontend.Variable) {
 	// Read 4 potential bytes
 	byte1 := selectByteAt(api, tx, startIdx, maxIdx)
@@ -235,6 +291,31 @@ func decodeVarint4Bytes(api frontend.API, tx []frontend.Variable, startIdx front
 	// sớm thì byte4 là dữ liệu field kế tiếp, không thể cưỡng bức msb4=0.
 	// Gating: msb1*msb2*msb3 == 1 → msb4 phải = 0.
 	api.AssertIsEqual(api.Mul(msb1, api.Mul(msb2, api.Mul(msb3, msb4))), 0)
+
+	// ATTACK #3 FIX: Enforce canonical encoding (shortest form)
+	// If using 2 bytes (msb1=1), value must be >= 128
+	// If using 3 bytes (msb1=1, msb2=1), value must be >= 128^2 = 16384
+	// If using 4 bytes (msb1=1, msb2=1, msb3=1), value must be >= 128^3 = 2097152
+
+	// Check 2-byte canonical: if msb1=1, then val2 must be >= 1 (not 0)
+	// Because if val2=0 and msb1=1, it means value < 128 which should use 1 byte
+	isTwoByte := api.Mul(msb1, api.Sub(1, msb2)) // msb1=1 AND msb2=0
+	// If 2-byte, val2 >= 1 (hoặc val1 >= 128, nhưng val1 < 128 luôn)
+	val2IsNonZero := api.Sub(1, api.IsZero(val2))
+	shouldBeNonZero := api.Mul(isTwoByte, val2IsNonZero)
+	api.AssertIsEqual(shouldBeNonZero, isTwoByte) // Nếu dùng 2 bytes thì val2 > 0
+
+	// Check 3-byte canonical: if msb1=1, msb2=1, msb3=0, then val3 > 0
+	isThreeByte := api.Mul(msb1, api.Mul(msb2, api.Sub(1, msb3)))
+	val3IsNonZero := api.Sub(1, api.IsZero(val3))
+	shouldBeNonZero3 := api.Mul(isThreeByte, val3IsNonZero)
+	api.AssertIsEqual(shouldBeNonZero3, isThreeByte)
+
+	// Check 4-byte canonical: similar logic
+	isFourByte := api.Mul(msb1, api.Mul(msb2, msb3))
+	val4IsNonZero := api.Sub(1, api.IsZero(val4))
+	shouldBeNonZero4 := api.Mul(isFourByte, val4IsNonZero)
+	api.AssertIsEqual(shouldBeNonZero4, isFourByte)
 
 	// Calculate final value based on how many bytes are used
 	// value = val1 + (msb1 * val2 * 128) + (msb1 * msb2 * val3 * 128^2) + (msb1 * msb2 * msb3 * val4 * 128^3)

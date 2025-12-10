@@ -126,11 +126,11 @@ func testMessageSkippingAttack() {
 	if err != nil {
 		panic(fmt.Errorf("setup: %w", err))
 	}
-	fmt.Println("Setup done!\n")
+	fmt.Println("Setup done!")
 
 	fmt.Println("Preparing malicious witness (skipping first message)...")
 	witness := prepareTxsWitness(txBytes, attackAssertions, attackConfigs)
-	fmt.Println("Witness ready!\n")
+	fmt.Println("Witness ready!")
 
 	fmt.Println("Attempting to generate proof with skipped message...")
 	fullWitness, err := frontend.NewWitness(witness, ecc.BN254.ScalarField())
