@@ -87,7 +87,25 @@ func (circuit *TxsFieldCircuit) Define(api frontend.API) error {
 		cursor = circuit.verifyMessage(api, tx, msg, circuit.msgConfigs[i], bodyEnd)
 	}
 
-	api.AssertIsLessOrEqual(cursor, bodyEnd)
+	//đảm bảo say txbody chỉ có memo, timeout height... chứ không còn msg nào khacs
+	maxIdx := len(tx) - 1
+
+	// api.Sub(cursor, bodyEnd) = 0 nếu ko có field nào khác tức là chỉ nguyên []msg, 1 nếu có memo, timeoutheight...
+	isAtEnd := api.IsZero(api.Sub(cursor, bodyEnd))
+
+	// If not at end, verify next byte is not a message tag (0x0a)
+	nextByte := selectByteAt(api, tx, cursor, maxIdx)
+
+	// là 1 khi byte tiếp theo là 0x0a tức là field 1,w =2
+	isNotMsgTag := api.IsZero(api.Sub(nextByte, 0x0a))
+
+	// Assert: (cursor == bodyEnd) OR (nextByte != 0x0a)
+	// Using: isAtEnd OR NOT(isNotMsgTag) = isAtEnd + (1 - isNotMsgTag) - isAtEnd*(1-isNotMsgTag) >= 1
+	notMsgTagOrEnd := api.Sub(
+		api.Add(isAtEnd, api.Sub(1, isNotMsgTag)), //
+		api.Mul(isAtEnd, api.Sub(1, isNotMsgTag)),
+	)
+	api.AssertIsEqual(notMsgTagOrEnd, 1)
 
 	return nil
 }
