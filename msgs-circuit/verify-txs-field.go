@@ -341,6 +341,52 @@ func extractFieldValueDemo(msgValue []byte, fieldKey byte) ([]byte, error) {
 	return nil, fmt.Errorf("field 0x%x not found", fieldKey)
 }
 
+func findFieldOffset(msgValue []byte, fieldKey byte, fieldValue []byte) (int, error) {
+	offset := 0
+	for offset < len(msgValue) {
+		if msgValue[offset] == fieldKey {
+			// Found the field key, now verify the value matches
+			offset++ // Skip key byte
+
+			// Decode length
+			length, consumed, err := decodeVarintDemo(msgValue[offset:])
+			if err != nil {
+				return 0, err
+			}
+			offset += consumed
+
+			// Check if value matches
+			if offset+length <= len(msgValue) {
+				actualValue := msgValue[offset : offset+length]
+				if len(actualValue) == len(fieldValue) {
+					match := true
+					for i := range actualValue {
+						if actualValue[i] != fieldValue[i] {
+							match = false
+							break
+						}
+					}
+					if match {
+						// Return offset relative to start of msgValue
+						// Need to return offset of the KEY byte
+						return offset - consumed - 1, nil
+					}
+				}
+			}
+			offset += length
+		} else {
+			// Skip this field
+			offset++ // Skip key
+			length, consumed, err := decodeVarintDemo(msgValue[offset:])
+			if err != nil {
+				return 0, err
+			}
+			offset += consumed + length
+		}
+	}
+	return 0, fmt.Errorf("field with key 0x%x and matching value not found", fieldKey)
+}
+
 func prepareTxsWitness(
 	txBytes []byte,
 	assertions []txsFieldAssertion,
