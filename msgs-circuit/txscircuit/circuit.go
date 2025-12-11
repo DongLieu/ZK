@@ -28,7 +28,6 @@ type MsgConfig struct {
 // TxsFieldCircuit chứng minh TxBytes chứa nhiều Msg (có thể >1) và mỗi Msg
 // có Field length-delimited khớp public input.
 type TxsFieldCircuit struct {
-	TxBytes       []frontend.Variable `gnark:",secret"`
 	PublicTxBytes []frontend.Variable `gnark:",public"`
 	Msgs          []MsgAssertion
 
@@ -48,7 +47,6 @@ func NewTxsFieldCircuit(txLen int, configs []MsgConfig) *TxsFieldCircuit {
 	}
 
 	return &TxsFieldCircuit{
-		TxBytes:       make([]frontend.Variable, txLen),
 		PublicTxBytes: make([]frontend.Variable, txLen),
 		Msgs:          msgs,
 		msgConfigs:    configs,
@@ -57,13 +55,9 @@ func NewTxsFieldCircuit(txLen int, configs []MsgConfig) *TxsFieldCircuit {
 }
 
 func (circuit *TxsFieldCircuit) Define(api frontend.API) error {
-	tx := circuit.TxBytes
+	tx := circuit.PublicTxBytes
 	if len(tx) == 0 {
 		panic("empty tx")
-	}
-
-	for i := range tx {
-		api.AssertIsEqual(tx[i], circuit.PublicTxBytes[i])
 	}
 
 	api.AssertIsEqual(tx[0], 0x0a)

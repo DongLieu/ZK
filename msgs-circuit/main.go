@@ -413,12 +413,10 @@ func prepareTxsWitness(
 ) *txscircuit.TxsFieldCircuit {
 	witness := txscircuit.NewTxsFieldCircuit(len(txBytes), configs)
 
-	for i := range witness.TxBytes {
+	for i := range witness.PublicTxBytes {
 		if i < len(txBytes) {
-			witness.TxBytes[i] = int(txBytes[i])
 			witness.PublicTxBytes[i] = int(txBytes[i])
 		} else {
-			witness.TxBytes[i] = 0
 			witness.PublicTxBytes[i] = 0
 		}
 	}
