@@ -49,7 +49,6 @@ func main() {
 }
 
 type txsFieldAssertion struct {
-	TypeURL     string
 	FieldKey    byte
 	FieldValue  []byte
 	FieldOffset int
@@ -125,14 +124,12 @@ func case1() {
 
 	assertions := []txsFieldAssertion{
 		{
-			TypeURL:     sendAny.TypeUrl,
 			FieldKey:    sendFieldKey,
 			FieldValue:  sendFieldValue,
 			FieldOffset: sendFieldOffset,
 			BodyOffset:  offsets[0],
 		},
 		{
-			TypeURL:     delegateAny.TypeUrl,
 			FieldKey:    delegateFieldKey,
 			FieldValue:  delegateFieldValue,
 			FieldOffset: delegateFieldOffset,
@@ -142,12 +139,10 @@ func case1() {
 
 	configs := []txscircuit.MsgConfig{
 		{
-			MsgTypeLen:    len(sendAny.TypeUrl),
 			FieldValueLen: len(sendFieldValue),
 			MsgValueLen:   len(sendAny.Value),
 		},
 		{
-			MsgTypeLen:    len(delegateAny.TypeUrl),
 			FieldValueLen: len(delegateFieldValue),
 			MsgValueLen:   len(delegateAny.Value),
 		},
@@ -438,7 +433,6 @@ func prepareTxsWitness(
 				}
 			}
 		}
-		copyBytes(witness.Msgs[i].MsgType, []byte(assertion.TypeURL))
 		copyBytes(witness.Msgs[i].Field.Value, assertion.FieldValue)
 
 		witness.Msgs[i].Field.Key = int(assertion.FieldKey)
@@ -597,14 +591,12 @@ func case2() {
 
 	assertions := []txsFieldAssertion{
 		{
-			TypeURL:     sendAny.TypeUrl,
 			FieldKey:    sendFieldKey,
 			FieldValue:  sendFieldValue,
 			FieldOffset: sendFieldOffset,
 			BodyOffset:  offsets[0],
 		},
 		{
-			TypeURL:     delegateAny.TypeUrl,
 			FieldKey:    delegateFieldKey,
 			FieldValue:  delegateFieldValue,
 			FieldOffset: delegateFieldOffset,
@@ -614,12 +606,10 @@ func case2() {
 
 	configs := []txscircuit.MsgConfig{
 		{
-			MsgTypeLen:    len(sendAny.TypeUrl),
 			FieldValueLen: len(sendFieldValue),
 			MsgValueLen:   len(sendAny.Value),
 		},
 		{
-			MsgTypeLen:    len(delegateAny.TypeUrl),
 			FieldValueLen: len(delegateFieldValue),
 			MsgValueLen:   len(delegateAny.Value),
 		},

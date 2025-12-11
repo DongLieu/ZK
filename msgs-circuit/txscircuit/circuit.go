@@ -14,7 +14,6 @@ type FieldPublic struct {
 
 // MsgAssertion mô tả một message trong TxBody chúng ta muốn kiểm chứng.
 type MsgAssertion struct {
-	MsgType     []frontend.Variable `gnark:",secret"`
 	Field       FieldPublic
 	FieldOffset frontend.Variable `gnark:",secret"`
 	BodyOffset  frontend.Variable `gnark:",secret"`
@@ -22,7 +21,6 @@ type MsgAssertion struct {
 
 // MsgConfig định nghĩa kích thước cố định cho từng message assertion.
 type MsgConfig struct {
-	MsgTypeLen    int
 	FieldValueLen int
 	MsgValueLen   int
 }
@@ -46,7 +44,6 @@ func NewTxsFieldCircuit(txLen int, configs []MsgConfig) *TxsFieldCircuit {
 	}
 	msgs := make([]MsgAssertion, len(configs))
 	for i, cfg := range configs {
-		msgs[i].MsgType = make([]frontend.Variable, cfg.MsgTypeLen)
 		msgs[i].Field.Value = make([]frontend.Variable, cfg.FieldValueLen)
 	}
 
@@ -134,16 +131,12 @@ func (circuit *TxsFieldCircuit) verifyMessage(
 	api.AssertIsEqual(typeTag, 0x0a)
 
 	typeLenIdx := api.Add(msgDataStart, frontend.Variable(1))
-	typeLenByte := selectByteAt(api, tx, typeLenIdx, maxIdx)
-	api.AssertIsEqual(typeLenByte, frontend.Variable(len(msg.MsgType)))
+	typeLen, typeLenBytes := decodeVarint4Bytes(api, tx, typeLenIdx, maxIdx)
 
-	typeStart := api.Add(typeLenIdx, frontend.Variable(1))
-	for j := 0; j < len(msg.MsgType); j++ {
-		idx := api.Add(typeStart, frontend.Variable(j))
-		api.AssertIsEqual(selectByteAt(api, tx, idx, maxIdx), msg.MsgType[j])
-	}
+	typeStart := api.Add(typeLenIdx, typeLenBytes)
+	api.AssertIsLessOrEqual(api.Add(typeStart, typeLen), api.Add(msgDataStart, msgLen))
 
-	valueTagIdx := api.Add(typeStart, frontend.Variable(len(msg.MsgType)))
+	valueTagIdx := api.Add(typeStart, typeLen)
 	api.AssertIsEqual(selectByteAt(api, tx, valueTagIdx, maxIdx), 0x12)
 
 	// Decode value length using up to 4 bytes varint
