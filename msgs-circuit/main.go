@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	txscircuit "github.com/DongLieu/msg-circuit/txscircuit"
@@ -27,8 +28,24 @@ import (
 )
 
 func main() {
-	// case1()
-	case2()
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run main.go <case>")
+		fmt.Println("  case 1: Legitimate transaction")
+		fmt.Println("  case 2: Duplicate field attack")
+		os.Exit(1)
+	}
+
+	caseNum := os.Args[1]
+	switch caseNum {
+	case "1":
+		case1()
+	case "2":
+		case2()
+	default:
+		fmt.Printf("Unknown case: %s\n", caseNum)
+		fmt.Println("Available cases: 1, 2")
+		os.Exit(1)
+	}
 }
 
 type txsFieldAssertion struct {
