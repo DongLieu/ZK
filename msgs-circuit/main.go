@@ -3,6 +3,7 @@ package main
 //go:generate go run verify-txs-field.go
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"cosmossdk.io/math"
 	banktypes "cosmossdk.io/x/bank/types"
 	stakingtypes "cosmossdk.io/x/staking/types"
-
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
@@ -32,6 +32,7 @@ func main() {
 		fmt.Println("Usage: go run main.go <case>")
 		fmt.Println("  case 1: Legitimate transaction")
 		fmt.Println("  case 2: Duplicate field attack")
+		fmt.Println("  case 3: MsgExecuteContract with huge payload")
 		os.Exit(1)
 	}
 
@@ -41,9 +42,11 @@ func main() {
 		case1()
 	case "2":
 		case2()
+	case "3":
+		case3()
 	default:
 		fmt.Printf("Unknown case: %s\n", caseNum)
-		fmt.Println("Available cases: 1, 2")
+		fmt.Println("Available cases: 1, 2, 3")
 		os.Exit(1)
 	}
 }
@@ -188,6 +191,135 @@ func case1() {
 		panic(fmt.Errorf("verify: %w", err))
 	}
 	fmt.Println("✅ Proof verification SUCCEEDED!")
+}
+
+func case3() {
+	fmt.Println("========== ZK PROOF FOR MASSIVE CONTRACT PAYLOAD ==========")
+	fmt.Println()
+
+	protoCodec := newBenchmarkProtoCodec()
+
+	privKey := secp256k1.GenPrivKey()
+	fromAddr := sdk.AccAddress(privKey.PubKey().Address()).String()
+	toAddr := sdk.AccAddress(secp256k1.GenPrivKey().PubKey().Address()).String()
+	contractAddr := sdk.AccAddress(secp256k1.GenPrivKey().PubKey().Address()).String()
+
+	msgSend := &banktypes.MsgSend{
+		FromAddress: fromAddr,
+		ToAddress:   toAddr,
+		Amount:      sdk.NewCoins(sdk.NewCoin("uatom", math.NewInt(4242))),
+	}
+
+	const executePayloadSize = 5_000
+	execPayload := buildLargeExecutePayload(executePayloadSize)
+	fmt.Printf("Execute payload size: %d bytes\n", len(execPayload))
+
+	sendAny, err := codectypes.NewAnyWithValue(msgSend)
+	if err != nil {
+		panic(fmt.Errorf("wrap send: %w", err))
+	}
+
+	execAny, err := buildExecuteContractAny(fromAddr, contractAddr, execPayload, sdk.NewCoins(sdk.NewCoin("uatom", math.NewInt(1))))
+	if err != nil {
+		panic(fmt.Errorf("build execute msg: %w", err))
+	}
+
+	anyMsgs := []*codectypes.Any{sendAny, execAny}
+
+	txBytes := buildTxWithMessagesDemo(protoCodec, privKey, anyMsgs)
+	fmt.Printf("Transaction created with %d bytes (huge contract payload)\n\n", len(txBytes))
+
+	offsets, err := locateMessageOffsetsDemo(txBytes, len(anyMsgs))
+	if err != nil {
+		panic(fmt.Errorf("locate offsets: %w", err))
+	}
+
+	sendFieldKey := byte((3 << 3) | 2)
+	sendFieldValue, err := extractFieldValueDemo(sendAny.Value, sendFieldKey)
+	if err != nil {
+		panic(err)
+	}
+	sendFieldOffset, err := findFieldOffset(sendAny.Value, sendFieldKey, sendFieldValue)
+	if err != nil {
+		panic(err)
+	}
+
+	execFieldKey := byte((1 << 3) | 2) // sender field
+	execFieldValue, err := extractFieldValueDemo(execAny.Value, execFieldKey)
+	if err != nil {
+		panic(err)
+	}
+	execFieldOffset, err := findFieldOffset(execAny.Value, execFieldKey, execFieldValue)
+	if err != nil {
+		panic(err)
+	}
+
+	assertions := []txsFieldAssertion{
+		{
+			FieldKey:    sendFieldKey,
+			FieldValue:  sendFieldValue,
+			FieldOffset: sendFieldOffset,
+			BodyOffset:  offsets[0],
+		},
+		{
+			FieldKey:    execFieldKey,
+			FieldValue:  execFieldValue,
+			FieldOffset: execFieldOffset,
+			BodyOffset:  offsets[1],
+		},
+	}
+
+	configs := []txscircuit.MsgConfig{
+		{
+			FieldValueLen: len(sendFieldValue),
+			MsgValueLen:   len(sendAny.Value),
+		},
+		{
+			FieldValueLen: len(execFieldValue),
+			MsgValueLen:   len(execAny.Value),
+		},
+	}
+
+	circuit := txscircuit.NewTxsFieldCircuit(len(txBytes), configs)
+
+	fmt.Println("Compiling TxsFieldCircuit...")
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
+	if err != nil {
+		panic(fmt.Errorf("compile circuit: %w", err))
+	}
+	fmt.Printf("Circuit compiled, constraints: %d\n\n", ccs.GetNbConstraints())
+
+	fmt.Println("Running Groth16 setup...")
+	pk, vk, err := groth16.Setup(ccs)
+	if err != nil {
+		panic(fmt.Errorf("setup: %w", err))
+	}
+	fmt.Println("Setup done!")
+
+	fmt.Println("Preparing witness...")
+	witness := prepareTxsWitness(txBytes, assertions, configs)
+	fmt.Println("Witness ready!")
+
+	fmt.Println("Generating proof...")
+	fullWitness, err := frontend.NewWitness(witness, ecc.BN254.ScalarField())
+	if err != nil {
+		panic(fmt.Errorf("full witness: %w", err))
+	}
+	proof, err := groth16.Prove(ccs, pk, fullWitness)
+	if err != nil {
+		panic(fmt.Errorf("prove: %w", err))
+	}
+	fmt.Println("Proof generated!")
+
+	fmt.Println("Verifying proof...")
+	publicWitness, err := fullWitness.Public()
+	if err != nil {
+		panic(fmt.Errorf("public witness: %w", err))
+	}
+	if err := groth16.Verify(proof, vk, publicWitness); err != nil {
+		panic(fmt.Errorf("verify: %w", err))
+	}
+	fmt.Println("✅ Proof verification SUCCEEDED for large payload!")
 }
 
 func newBenchmarkProtoCodec() *codec.ProtoCodec {
@@ -404,6 +536,67 @@ func findFieldOffset(msgValue []byte, fieldKey byte, fieldValue []byte) (int, er
 		}
 	}
 	return 0, fmt.Errorf("field with key 0x%x and matching value not found", fieldKey)
+}
+
+func buildExecuteContractAny(sender, contract string, execMsg []byte, funds sdk.Coins) (*codectypes.Any, error) {
+	buf := make([]byte, 0, len(sender)+len(contract)+len(execMsg)+128)
+	buf = appendLengthDelimitedField(buf, 1, []byte(sender))
+	buf = appendLengthDelimitedField(buf, 2, []byte(contract))
+	buf = appendLengthDelimitedField(buf, 3, execMsg)
+
+	for _, coin := range funds {
+		coinBytes, err := proto.Marshal(&coin)
+		if err != nil {
+			return nil, fmt.Errorf("marshal coin: %w", err)
+		}
+		buf = appendLengthDelimitedField(buf, 4, coinBytes)
+	}
+
+	return &codectypes.Any{
+		TypeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+		Value:   buf,
+	}, nil
+}
+
+func appendLengthDelimitedField(buf []byte, fieldNumber int, value []byte) []byte {
+	key := byte((fieldNumber << 3) | 2)
+	buf = append(buf, key)
+	buf = append(buf, encodeVarint(len(value))...)
+	return append(buf, value...)
+}
+
+func buildLargeExecutePayload(size int) []byte {
+	if size < 64 {
+		size = 64
+	}
+	prefix := []byte(`{"action":"massive_payload","chunk":"`)
+	suffix := []byte(`"}`)
+	fillerLen := size - len(prefix) - len(suffix)
+	if fillerLen < 0 {
+		fillerLen = 0
+	}
+	payload := make([]byte, 0, len(prefix)+fillerLen+len(suffix))
+	payload = append(payload, prefix...)
+	payload = append(payload, bytes.Repeat([]byte("A"), fillerLen)...)
+	payload = append(payload, suffix...)
+	return payload
+}
+
+func encodeVarint(length int) []byte {
+	if length == 0 {
+		return []byte{0}
+	}
+	var out []byte
+	val := length
+	for val > 0 {
+		b := byte(val & 0x7f)
+		val >>= 7
+		if val > 0 {
+			b |= 0x80
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 func prepareTxsWitness(
