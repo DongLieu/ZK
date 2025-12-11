@@ -329,68 +329,56 @@ func selectByteAt(api frontend.API, tx []frontend.Variable, idx frontend.Variabl
 	api.AssertIsLessOrEqual(frontend.Variable(0), idx)
 	api.AssertIsLessOrEqual(idx, frontend.Variable(maxIdx))
 
-	// Temporarily use linear until binary tree is fully debugged
-	return selectByteAtLinear(api, tx, idx, maxIdx)
-
-	// TODO: Re-enable binary tree after fixing bit ordering
-	// numBits := bitsFor(maxIdx + 1)
-	// idxBits := api.ToBinary(idx, numBits)
-	// return selectByteAtRecursive(api, tx, idxBits, 0, maxIdx, 0)
-}
-
-// selectByteAtLinear is the original O(n) implementation for small arrays
-func selectByteAtLinear(api frontend.API, tx []frontend.Variable, idx frontend.Variable, maxIdx int) frontend.Variable {
-	result := frontend.Variable(0)
-	for pos := 0; pos <= maxIdx; pos++ {
-		isPos := api.IsZero(api.Sub(idx, frontend.Variable(pos)))
-		result = api.Add(result, api.Mul(isPos, tx[pos]))
+	length := maxIdx + 1
+	pow2 := 1
+	numBits := 0
+	for pow2 < length {
+		pow2 <<= 1
+		numBits++
 	}
-	return result
+	if numBits == 0 {
+		numBits = 1
+	}
+
+	idxBitsLE := api.ToBinary(idx, numBits)
+	idxBits := make([]frontend.Variable, numBits)
+	for i := 0; i < numBits; i++ {
+		idxBits[i] = idxBitsLE[numBits-1-i]
+	}
+
+	return selectByteAtPow2(api, tx, idxBits, 0, pow2, 0)
 }
 
-// selectByteAtRecursive performs binary tree selection recursively
-// This implementation properly handles non-power-of-2 array sizes
-func selectByteAtRecursive(
+func selectByteAtPow2(
 	api frontend.API,
 	tx []frontend.Variable,
 	idxBits []frontend.Variable,
 	start int,
-	end int,
+	size int,
 	bitPos int,
 ) frontend.Variable {
-	// Base case: only one element
-	if start == end {
-		return tx[start]
-	}
-
-	// Base case: range is empty (shouldn't happen but safe guard)
-	if start > end {
+	if size == 1 {
+		if start < len(tx) {
+			return tx[start]
+		}
 		return frontend.Variable(0)
 	}
 
-	// Calculate mid point
-	mid := start + (end-start)/2
+	half := size / 2
+	left := selectByteAtPow2(api, tx, idxBits, start, half, bitPos+1)
+	right := selectByteAtPow2(api, tx, idxBits, start+half, half, bitPos+1)
 
-	// Determine which bit to check (LSB first approach)
 	if bitPos >= len(idxBits) {
-		// No more bits to check, return first element
-		return tx[start]
+		return left
 	}
 
 	currentBit := idxBits[bitPos]
-
-	// Recursively get values from left and right subtrees
-	leftValue := selectByteAtRecursive(api, tx, idxBits, start, mid, bitPos+1)
-	rightValue := selectByteAtRecursive(api, tx, idxBits, mid+1, end, bitPos+1)
-
-	// Select based on current bit: result = (1 - bit) * left + bit * right
 	notBit := api.Sub(1, currentBit)
-	result := api.Add(
-		api.Mul(notBit, leftValue),
-		api.Mul(currentBit, rightValue),
-	)
 
-	return result
+	return api.Add(
+		api.Mul(notBit, left),
+		api.Mul(currentBit, right),
+	)
 }
 
 func bitsFor(n int) int {
