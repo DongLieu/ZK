@@ -3,6 +3,7 @@ package main
 //go:generate go run verify-txs-field.go
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"strings"
@@ -413,11 +414,20 @@ func prepareTxsWitness(
 ) *txscircuit.TxsFieldCircuit {
 	witness := txscircuit.NewTxsFieldCircuit(len(txBytes), configs)
 
-	for i := range witness.PublicTxBytes {
+	for i := range witness.TxBytes {
 		if i < len(txBytes) {
-			witness.PublicTxBytes[i] = int(txBytes[i])
+			witness.TxBytes[i] = int(txBytes[i])
 		} else {
-			witness.PublicTxBytes[i] = 0
+			witness.TxBytes[i] = 0
+		}
+	}
+
+	txHash := sha256.Sum256(txBytes)
+	for i := range witness.TxHash {
+		if i < len(txHash) {
+			witness.TxHash[i] = int(txHash[i])
+		} else {
+			witness.TxHash[i] = 0
 		}
 	}
 

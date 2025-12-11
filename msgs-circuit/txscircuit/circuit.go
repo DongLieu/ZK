@@ -1,9 +1,12 @@
 package txscircuit
 
 import (
+	"fmt"
 	"math/bits"
 
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/std/hash/sha2"
+	"github.com/consensys/gnark/std/math/uints"
 )
 
 // FieldPublic chứa key + value (length-delimited field) làm public input.
@@ -28,8 +31,9 @@ type MsgConfig struct {
 // TxsFieldCircuit chứng minh TxBytes chứa nhiều Msg (có thể >1) và mỗi Msg
 // có Field length-delimited khớp public input.
 type TxsFieldCircuit struct {
-	PublicTxBytes []frontend.Variable `gnark:",public"`
-	Msgs          []MsgAssertion
+	TxBytes []frontend.Variable `gnark:",secret"`
+	TxHash  []frontend.Variable `gnark:",public"`
+	Msgs    []MsgAssertion
 
 	msgConfigs  []MsgConfig
 	txIndexBits int
@@ -47,17 +51,40 @@ func NewTxsFieldCircuit(txLen int, configs []MsgConfig) *TxsFieldCircuit {
 	}
 
 	return &TxsFieldCircuit{
-		PublicTxBytes: make([]frontend.Variable, txLen),
-		Msgs:          msgs,
-		msgConfigs:    configs,
-		txIndexBits:   bitsFor(txLen),
+		TxBytes:     make([]frontend.Variable, txLen),
+		TxHash:      make([]frontend.Variable, 32),
+		Msgs:        msgs,
+		msgConfigs:  configs,
+		txIndexBits: bitsFor(txLen),
 	}
 }
 
 func (circuit *TxsFieldCircuit) Define(api frontend.API) error {
-	tx := circuit.PublicTxBytes
+	tx := circuit.TxBytes
 	if len(tx) == 0 {
 		panic("empty tx")
+	}
+
+	byteField, err := uints.New[uints.U32](api)
+	if err != nil {
+		return err
+	}
+	txBytes := make([]uints.U8, len(tx))
+	for i := range tx {
+		txBytes[i] = byteField.ByteValueOf(tx[i])
+	}
+
+	hasher, err := sha2.New(api)
+	if err != nil {
+		return err
+	}
+	hasher.Write(txBytes)
+	computedHash := hasher.Sum()
+	if len(computedHash) != len(circuit.TxHash) {
+		return fmt.Errorf("tx hash length mismatch: expect %d bytes, got %d", len(circuit.TxHash), len(computedHash))
+	}
+	for i := range computedHash {
+		api.AssertIsEqual(computedHash[i].Val, circuit.TxHash[i])
 	}
 
 	api.AssertIsEqual(tx[0], 0x0a)
