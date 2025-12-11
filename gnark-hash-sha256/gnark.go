@@ -72,6 +72,10 @@ func (circuit *SHA512Circuit) Define(api frontend.API) error {
 }
 
 func main() {
+	demoSingleHash()
+}
+
+func demo3Hash() {
 	// Example inputs (in bytes)
 	a := []byte("secret_value_a_123456789012345678901234567890123456789012345")
 	b := []byte("public_value_b_123456789012345678901234567890123456789012345")
@@ -178,4 +182,85 @@ func main() {
 		fmt.Printf("\nPublic Input B: %s\n", string(bPadded))
 		fmt.Printf("Public Output: %x\n", expectedOutput)
 	}
+}
+
+type SingleSHA256Circuit struct {
+	Input  []frontend.Variable `gnark:",secret"`
+	Output [32]uints.U8        `gnark:",public"`
+	length int
+}
+
+func (circuit *SingleSHA256Circuit) Define(api frontend.API) error {
+	byteField, err := uints.New[uints.U32](api)
+	if err != nil {
+		return err
+	}
+	txBytes := make([]uints.U8, circuit.length)
+	for i := 0; i < circuit.length; i++ {
+		txBytes[i] = byteField.ByteValueOf(circuit.Input[i])
+	}
+
+	hasher, err := sha2.New(api)
+	if err != nil {
+		return err
+	}
+	hasher.Write(txBytes)
+	digest := hasher.Sum()
+
+	for i := 0; i < len(digest); i++ {
+		api.AssertIsEqual(circuit.Output[i].Val, digest[i].Val)
+	}
+	return nil
+}
+
+func demoSingleHash() {
+	hex := "0a2d636f736d6f733138717176377272757a663832687479717a6e37673366393337323265786c6d636b7465383267122d636f736d6f73313764326172363373307179766e64327a3965736e7934797930766e7730657878637463326e791a100a057561746f6d120731303030303030"
+	secret := []byte(hex)
+	expected := sha256.Sum256(secret)
+
+	var circuit SingleSHA256Circuit
+	circuit.Input = make([]frontend.Variable, len(secret))
+	circuit.length = len(secret)
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("Single-hash circuit constraints: %d\n", ccs.GetNbConstraints())
+
+	pk, vk, err := groth16.Setup(ccs)
+	if err != nil {
+		panic(err)
+	}
+
+	var assignment SingleSHA256Circuit
+	assignment.Input = make([]frontend.Variable, len(secret))
+	for i := range assignment.Input {
+		if i < len(secret) {
+			assignment.Input[i] = int(secret[i])
+		} else {
+			assignment.Input[i] = 0
+		}
+	}
+
+	for i := 0; i < 32; i++ {
+		assignment.Output[i] = uints.NewU8(expected[i])
+	}
+
+	witness, err := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
+	if err != nil {
+		panic(err)
+	}
+	publicWitness, err := witness.Public()
+	if err != nil {
+		panic(err)
+	}
+
+	proof, err := groth16.Prove(ccs, pk, witness)
+	if err != nil {
+		panic(err)
+	}
+	if err := groth16.Verify(proof, vk, publicWitness); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Single hash proof verified! Output: %x\n", expected[:])
 }
