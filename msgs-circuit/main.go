@@ -27,7 +27,8 @@ import (
 )
 
 func main() {
-	case1()
+	// case1()
+	case2()
 }
 
 type txsFieldAssertion struct {
@@ -429,4 +430,237 @@ func prepareTxsWitness(
 	}
 
 	return witness
+}
+
+func case2() {
+	fmt.Println("========== ATTACK: DUPLICATE FIELD TEST ==========")
+	fmt.Println()
+
+	protoCodec := newBenchmarkProtoCodec()
+
+	privKey := secp256k1.GenPrivKey()
+	fromAddr := sdk.AccAddress(privKey.PubKey().Address()).String()
+	toAddr := sdk.AccAddress(secp256k1.GenPrivKey().PubKey().Address()).String()
+
+	// Create normal MsgSend first
+	msgSend := &banktypes.MsgSend{
+		FromAddress: fromAddr,
+		ToAddress:   toAddr,
+		Amount:      sdk.NewCoins(sdk.NewCoin("uatom", math.NewInt(4242))), // Public amount
+	}
+
+	// Marshal normally to get the structure
+	normalValue, err := proto.Marshal(msgSend)
+	if err != nil {
+		panic(fmt.Errorf("marshal send: %w", err))
+	}
+
+	// ATTACK: Manually inject duplicate Amount field (field 3) with 10000uatom BEFORE the real one
+	// Field 3 tag = (3 << 3) | 2 = 0x1A
+
+	// Create the first (hidden) amount: 10000uatom
+	hiddenCoin := sdk.NewCoin("uatom", math.NewInt(10000))
+	hiddenCoinBytes, err := proto.Marshal(&hiddenCoin)
+	if err != nil {
+		panic(fmt.Errorf("marshal hidden coin: %w", err))
+	}
+
+	// Build malicious message value:
+	// We need to inject the hidden field BEFORE the existing amount field
+	// Strategy: Parse normalValue, find amount field, insert hidden field before it
+
+	maliciousValue := make([]byte, 0, len(normalValue)+len(hiddenCoinBytes)+2)
+
+	// Copy fields up to amount field (field 1 and 2)
+	cursor := 0
+	for cursor < len(normalValue) {
+		tag := normalValue[cursor]
+		cursor++
+
+		// Decode length
+		length, consumed, err := decodeVarintDemo(normalValue[cursor:])
+		if err != nil {
+			panic(err)
+		}
+		cursor += consumed
+
+		// If this is amount field (tag 0x1A), inject hidden field BEFORE it
+		if tag == 0x1A {
+			// First, append the hidden amount field
+			maliciousValue = append(maliciousValue, 0x1A) // Field 3 tag
+			maliciousValue = append(maliciousValue, byte(len(hiddenCoinBytes)))
+			maliciousValue = append(maliciousValue, hiddenCoinBytes...)
+
+			fmt.Printf("✓ Injected HIDDEN amount field: 10000uatom (at offset %d)\n", len(maliciousValue)-len(hiddenCoinBytes)-2)
+
+			// Then append the original amount field
+			maliciousValue = append(maliciousValue, tag)
+			maliciousValue = append(maliciousValue, byte(length))
+			maliciousValue = append(maliciousValue, normalValue[cursor:cursor+length]...)
+
+			fmt.Printf("✓ Kept PUBLIC amount field: 4242uatom (at offset %d)\n", len(maliciousValue)-length-2)
+
+			cursor += length
+			break
+		} else {
+			// Copy field as-is
+			maliciousValue = append(maliciousValue, tag)
+			maliciousValue = append(maliciousValue, byte(length))
+			maliciousValue = append(maliciousValue, normalValue[cursor:cursor+length]...)
+			cursor += length
+		}
+	}
+
+	// Copy any remaining fields after amount
+	if cursor < len(normalValue) {
+		maliciousValue = append(maliciousValue, normalValue[cursor:]...)
+	}
+
+	fmt.Printf("✓ Malicious message created: %d bytes (original: %d bytes)\n", len(maliciousValue), len(normalValue))
+	fmt.Println()
+
+	// Create Any with malicious value
+	sendAny := &codectypes.Any{
+		TypeUrl: "/cosmos.bank.v1beta1.MsgSend",
+		Value:   maliciousValue,
+	}
+
+	// Create normal delegate message
+	valKey := secp256k1.GenPrivKey()
+	valAddr := sdk.ValAddress(valKey.PubKey().Address()).String()
+	msgDelegate := &stakingtypes.MsgDelegate{
+		DelegatorAddress: fromAddr,
+		ValidatorAddress: valAddr,
+		Amount:           sdk.NewCoin("stake", math.NewInt(777)),
+	}
+
+	delegateAny, err := codectypes.NewAnyWithValue(msgDelegate)
+	if err != nil {
+		panic(fmt.Errorf("wrap delegate: %w", err))
+	}
+
+	txBytes := buildTxWithMessagesDemo(
+		protoCodec,
+		privKey,
+		[]*codectypes.Any{sendAny, delegateAny},
+	)
+	fmt.Printf("Transaction created with %d bytes and %d messages\n", len(txBytes), 2)
+	fmt.Println()
+
+	offsets, err := locateMessageOffsetsDemo(txBytes, 2)
+	if err != nil {
+		panic(fmt.Errorf("locate offsets: %w", err))
+	}
+
+	// Extract the PUBLIC amount field (second occurrence, 4242uatom)
+	sendFieldKey := byte((3 << 3) | 2) // Field 3
+	sendFieldValue, err := extractFieldValueDemo(sendAny.Value, sendFieldKey)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("✓ Extracted PUBLIC amount field: %d bytes\n", len(sendFieldValue))
+
+	// Find offset of PUBLIC amount (will find first occurrence = hidden one!)
+	sendFieldOffset, err := findFieldOffset(sendAny.Value, sendFieldKey, sendFieldValue)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("✓ PUBLIC amount offset: %d\n", sendFieldOffset)
+	fmt.Println()
+
+	delegateFieldKey := byte((1 << 3) | 2)
+	delegateFieldValue, err := extractFieldValueDemo(delegateAny.Value, delegateFieldKey)
+	if err != nil {
+		panic(err)
+	}
+	delegateFieldOffset, err := findFieldOffset(delegateAny.Value, delegateFieldKey, delegateFieldValue)
+	if err != nil {
+		panic(err)
+	}
+
+	assertions := []txsFieldAssertion{
+		{
+			TypeURL:     sendAny.TypeUrl,
+			FieldKey:    sendFieldKey,
+			FieldValue:  sendFieldValue,
+			FieldOffset: sendFieldOffset,
+			BodyOffset:  offsets[0],
+		},
+		{
+			TypeURL:     delegateAny.TypeUrl,
+			FieldKey:    delegateFieldKey,
+			FieldValue:  delegateFieldValue,
+			FieldOffset: delegateFieldOffset,
+			BodyOffset:  offsets[1],
+		},
+	}
+
+	configs := []txscircuit.MsgConfig{
+		{
+			MsgTypeLen:    len(sendAny.TypeUrl),
+			FieldValueLen: len(sendFieldValue),
+			MsgValueLen:   len(sendAny.Value),
+		},
+		{
+			MsgTypeLen:    len(delegateAny.TypeUrl),
+			FieldValueLen: len(delegateFieldValue),
+			MsgValueLen:   len(delegateAny.Value),
+		},
+	}
+
+	circuit := txscircuit.NewTxsFieldCircuit(len(txBytes), configs)
+
+	fmt.Println("Compiling TxsFieldCircuit...")
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
+	if err != nil {
+		panic(fmt.Errorf("compile circuit: %w", err))
+	}
+	fmt.Printf("Circuit compiled, constraints: %d\n\n", ccs.GetNbConstraints())
+
+	fmt.Println("Running Groth16 setup...")
+	pk, vk, err := groth16.Setup(ccs)
+	if err != nil {
+		panic(fmt.Errorf("setup: %w", err))
+	}
+	fmt.Println("Setup done!")
+
+	fmt.Println("Preparing witness with PUBLIC amount (4242uatom)...")
+	witness := prepareTxsWitness(txBytes, assertions, configs)
+	fmt.Println("Witness ready!")
+
+	fmt.Println()
+	fmt.Println("🔴 ATTACK SCENARIO:")
+	fmt.Println("   - Message has DUPLICATE field 3 (amount)")
+	fmt.Println("   - First occurrence: 10000uatom (HIDDEN)")
+	fmt.Println("   - Second occurrence: 4242uatom (PUBLIC in proof)")
+	fmt.Println("   - Protobuf decoder will use LAST value = 4242uatom")
+	fmt.Println("   - But attacker proves the second occurrence")
+	fmt.Println()
+
+	fmt.Println("Attempting to generate proof...")
+	fullWitness, err := frontend.NewWitness(witness, ecc.BN254.ScalarField())
+	if err != nil {
+		panic(fmt.Errorf("full witness: %w", err))
+	}
+	proof, err := groth16.Prove(ccs, pk, fullWitness)
+	if err != nil {
+		fmt.Printf("❌ PROOF GENERATION FAILED (as expected)!\n")
+		fmt.Printf("   Error: %v\n\n", err)
+		fmt.Println("✅ SUCCESS: Circuit detected duplicate field and rejected the proof!")
+		return
+	}
+
+	fmt.Println("⚠️  Proof generated! Verifying...")
+	publicWitness, err := fullWitness.Public()
+	if err != nil {
+		panic(fmt.Errorf("public witness: %w", err))
+	}
+	if err := groth16.Verify(proof, vk, publicWitness); err != nil {
+		fmt.Printf("❌ Verification failed: %v\n", err)
+		fmt.Println("✅ Attack blocked at verification stage")
+	} else {
+		fmt.Println("🔴 CRITICAL: Proof verification SUCCEEDED!")
+		fmt.Println("   Circuit accepted message with duplicate fields!")
+		fmt.Println("   This is a security vulnerability!")
+	}
 }
